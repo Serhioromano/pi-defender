@@ -19,7 +19,7 @@ All `patterns.yaml` files from every location are found, parsed, and merged toge
 (arrays are concatenated). No single file overrides another — all contribute.
 
 On first session start, `ensureGlobalConfig()` deploys the bundled defaults to
-`~/.pi/pi-defender/patterns.yaml` if it doesn't already exist (idempotent).
+`~/.pi/patterns.yaml` if it doesn't already exist (idempotent).
 The bundled defaults are embedded as a `DEFAULT_PATTERNS_YAML` template literal in
 `config.ts` — this avoids the `dist/` compilation issue where `src/patterns.yaml`
 is not copied by tsc.
@@ -27,7 +27,6 @@ is not copied by tsc.
 ```
 ~/.pi/patterns.yaml ────┐
 .pi/patterns.yaml ──────┤
-                        │
                         └──→ config.ts:loadConfig(cwd) ──→ getConfig()
                               (all found, merged together)
 ```
@@ -71,9 +70,9 @@ Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
 
 2. ABORTED STATE → blocks all bash with 🛡️❌ message
 
-3. STRICT MODE → strictModePrompt() selector: ✅ Approve / ⚠️ Deny / ⭐ Approve All / ❌ Abort
+3. STRICT MODE → strictModePrompt() selector: ✅ Approve / ⚠️ Deny / 📋 Allow & Whitelist / ⭐ Approve All / ❌ Abort
    - approveAllSession flag auto-approves safe commands
-   - Abort sets aborted=true
+   - Abort sets aborted=true and `ctx.abort()`
 
 4. NORMAL MODE → existing ask/allow behavior
 ```
