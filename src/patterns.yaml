@@ -1,11 +1,11 @@
 # =============================================================================
-# Pi Damage Control — Security Patterns
+# Pi Defender — Security Patterns
 # =============================================================================
 #
 # Edit this file to customize which operations are blocked.
 # Each extension loads this file from:
-#   1. .pi/damage-control/patterns.yaml  (project-local)
-#   2. ~/.pi/damage-control/patterns.yaml  (global fallback)
+#   1. .pi/defender/patterns.yaml  (project-local)
+#   2. ~/.pi/defender/patterns.yaml  (global fallback)
 #
 # -----------------------------------------------------------------------------
 # BASH TOOL PATTERNS — Matched against Bash tool commands

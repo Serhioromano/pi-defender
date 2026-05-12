@@ -4,6 +4,10 @@
 # Pi session artifacts
 pi-session-*.html
 
+# Legacy image
+pi-damage-control.png
+images/pi-damage-control.png
+
 # Git
 .git/
 .gitignore

@@ -1,8 +1,10 @@
-# Pi Damage Control 🛡️
+# Pi Defender 🛡️
 
-Defense-in-depth protection for [Pi](https://github.com/badlogic/pi-mono) coding agent. Blocks dangerous commands and protects sensitive files — a Pi port of [claude-code-damage-control](https://github.com/disler/claude-code-damage-control).
+> Inspired by [disler/claude-code-damage-control](https://github.com/disler/claude-code-damage-control)!
 
-<img width="800" alt="Pi Damage Control" src="https://github.com/Serhioromano/pi-damage-control/raw/main/images/pi-damage-control.png">
+Defense-in-depth protection for [Pi](https://github.com/badlogic/pi-mono) coding agent. Blocks dangerous commands and protects sensitive files — a Pi port of [claude-code-damage-control](https://github.com/disler/claude-code-damage-control). Previously published as `pi-damage-control`.
+
+<img width="800" alt="Pi Defender" src="https://github.com/Serhioromano/pi-defender/raw/main/images/pi-defender.png">
 
 ## Features
 
@@ -44,35 +46,35 @@ For destructive-but-valid commands (`git push --force`, `git push --delete`, `np
 ### Option 1: Install as Pi package
 
 ```bash
-pi install git:github.com/Serhioromano/pi-damage-control
+pi install npm:pi-defender
 ```
 
 ### Option 2: Manual (project-local)
 
 ```bash
 mkdir -p .pi/extensions
-curl -o .pi/extensions/damage-control.ts https://raw.githubusercontent.com/Serhioromano/pi-damage-control/main/src/index.ts
-# Also copy config.ts and place patterns.yaml in .pi/damage-control/
+curl -o .pi/extensions/defender.ts https://raw.githubusercontent.com/Serhioromano/pi-defender/main/src/index.ts
+# Also copy config.ts and place patterns.yaml in .pi/defender/
 ```
 
 ### Option 3: Global
 
 ```bash
-mkdir -p ~/.pi/agent/extensions/pi-damage-control
-cd ~/.pi/agent/extensions/pi-damage-control
-curl -L -O https://raw.githubusercontent.com/Serhioromano/pi-damage-control/main/package.json
+mkdir -p ~/.pi/agent/extensions/pi-defender
+cd ~/.pi/agent/extensions/pi-defender
+curl -L -O https://raw.githubusercontent.com/Serhioromano/pi-defender/main/package.json
 mkdir src
-curl -o src/index.ts https://raw.githubusercontent.com/Serhioromano/pi-damage-control/main/src/index.ts
-curl -o src/config.ts https://raw.githubusercontent.com/Serhioromano/pi-damage-control/main/src/config.ts
+curl -o src/index.ts https://raw.githubusercontent.com/Serhioromano/pi-defender/main/src/index.ts
+curl -o src/config.ts https://raw.githubusercontent.com/Serhioromano/pi-defender/main/src/config.ts
 npm install
 ```
 
 ## Configuration
 
-Damage Control loads configuration in this order:
+Defender loads configuration in this order:
 
-1. **Project-local**: `.pi/damage-control/patterns.yaml` *(project root)*
-2. **Global**: `~/.pi/damage-control/patterns.yaml` *(user home)*
+1. **Project-local**: `.pi/defender/patterns.yaml` *(project root)*
+2. **Global**: `~/.pi/defender/patterns.yaml` *(user home)*
 3. **Built-in defaults**: hardcoded patterns *(fallback)*
 
 First match wins. If project config exists, global config is ignored.
@@ -82,10 +84,10 @@ First match wins. If project config exists, global config is ignored.
 In your Pi session:
 
 ```
-/damage-control:patterns
+/defender:patterns
 ```
 
-This creates `.pi/damage-control/patterns.yaml` with a starter template.
+This creates `.pi/defender/patterns.yaml` with a starter template.
 
 ### patterns.yaml structure
 
@@ -121,13 +123,13 @@ noDeletePaths:
 ### Reload config
 
 ```
-/damage-control:reload
+/defender:reload
 ```
 
 ### Check status
 
 ```
-/damage-control:status
+/defender:status
 ```
 
 Shows: blocked/allowed/asked counts and active config summary.
@@ -151,14 +153,14 @@ Shows: blocked/allowed/asked counts and active config summary.
 
 | Command | Description |
 |---------|-------------|
-| `/damage-control:status` | Show statistics and active config |
-| `/damage-control:reload` | Reload YAML configuration |
-| `/damage-control:patterns` | Initialize project-local patterns.yaml |
+| `/defender:status` | Show statistics and active config |
+| `/defender:reload` | Reload YAML configuration |
+| `/defender:patterns` | Initialize project-local patterns.yaml |
 
 ## Directory Structure
 
 ```
-pi-damage-control/
+pi-defender/
 ├── package.json           # npm package + pi extension manifest
 ├── src/
 │   ├── index.ts           # Extension entry point
@@ -170,8 +172,8 @@ pi-damage-control/
 
 **Installed locations:**
 ```
-~/.pi/damage-control/patterns.yaml     # Global config
-.pi/damage-control/patterns.yaml       # Project config
+~/.pi/defender/patterns.yaml     # Global config
+.pi/defender/patterns.yaml       # Project config
 ```
 
 ## How It Works
@@ -214,8 +216,8 @@ Should block (zero-access).
 
 ```bash
 # Clone
-gh repo clone Serhioromano/pi-damage-control
-cd pi-damage-control
+gh repo clone Serhioromano/pi-defender
+cd pi-defender
 
 # Install deps
 npm install
@@ -230,4 +232,4 @@ MIT — see [LICENSE](LICENSE)
 
 ## Credits
 
-Inspired by and ported from [claude-code-damage-control](https://github.com/disler/claude-code-damage-control) by [disler](https://github.com/disler). Adapted for Pi's native TypeScript extension API.
+Previously published as [pi-damage-control](https://github.com/Serhioromano/pi-damage-control). Inspired by and ported from [claude-code-damage-control](https://github.com/disler/claude-code-damage-control) by [disler](https://github.com/disler). Adapted for Pi's native TypeScript extension API.

@@ -1,6 +1,6 @@
 /**
- * Pi Damage Control
- * =================
+ * Pi Defender
+ * ==========
  *
  * Defense-in-depth protection for Pi coding agent.
  * Blocks dangerous commands and protects sensitive files via Pi extensions.
@@ -11,8 +11,9 @@
  *   - Edit/Write/Read tools: path-level protection (zero-access, read-only)
  *   - Bash tool: path reference detection in commands
  *   - YAML configuration (project-local or global)
- *   - Management commands: /damage-control:reload, /damage-control:status, /damage-control:patterns
+ *   - Management commands: /defender:reload, /defender:status, /defender:patterns
  *
+ * Previously: pi-damage-control
  * Inspired by: https://github.com/disler/claude-code-damage-control
  */
 
@@ -102,7 +103,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     const config = getConfig(ctx.cwd);
     ctx.ui.notify(
-      `🛡️ Damage Control active (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+      `🛡️ Defender active (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
       "info",
     );
   });
@@ -206,12 +207,12 @@ export default function (pi: ExtensionAPI) {
   // COMMANDS
   // ===========================================================================
 
-  pi.registerCommand("damage-control:status", {
-    description: "Show damage control statistics and active configuration",
+  pi.registerCommand("defender:status", {
+    description: "Show defender statistics and active configuration",
     handler: async (_args, ctx) => {
       const config = getConfig(ctx.cwd);
       ctx.ui.notify(
-        `🛡️ Damage Control Stats\n` +
+        `🛡️ Defender Stats\n` +
         `  Allowed: ${stats.allowed} | Blocked: ${stats.blocked} | Asked: ${stats.asked}\n` +
         `  Bash patterns: ${config.bashToolPatterns.length}\n` +
         `  Zero-access paths: ${config.zeroAccessPaths.length}\n` +
@@ -222,8 +223,8 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("damage-control:reload", {
-    description: "Reload damage control configuration from YAML",
+  pi.registerCommand("defender:reload", {
+    description: "Reload defender configuration from YAML",
     handler: async (_args, ctx) => {
       currentConfig = null;
       const config = getConfig(ctx.cwd);
@@ -234,10 +235,10 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("damage-control:patterns", {
+  pi.registerCommand("defender:patterns", {
     description: "Initialize project-local patterns.yaml from template",
     handler: async (_args, ctx) => {
-      const dir = join(ctx.cwd, ".pi", "damage-control");
+      const dir = join(ctx.cwd, ".pi", "defender");
       const file = join(dir, "patterns.yaml");
 
       if (existsSync(file)) {
@@ -247,7 +248,7 @@ export default function (pi: ExtensionAPI) {
 
       mkdirSync(dir, { recursive: true });
       writeFileSync(file, PATTERNS_YAML_TEMPLATE, "utf-8");
-      ctx.ui.notify(`✅ Created ${file} — edit it to customize protection rules, then /damage-control:reload`, "success");
+      ctx.ui.notify(`✅ Created ${file} — edit it to customize protection rules, then /defender:reload`, "success");
     },
   });
 
@@ -264,7 +265,7 @@ export default function (pi: ExtensionAPI) {
 // PATTERNS YAML TEMPLATE
 // =============================================================================
 
-const PATTERNS_YAML_TEMPLATE = `# Pi Damage Control — Security Patterns
+const PATTERNS_YAML_TEMPLATE = `# Pi Defender — Security Patterns
 # =============================================================
 # Edit this file to customize which operations are blocked.
 #

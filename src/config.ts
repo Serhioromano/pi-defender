@@ -87,11 +87,11 @@ export const NO_DELETE_BLOCKED: PatternTuple[] = DELETE_PATTERNS;
 function getConfigPaths(cwd: string): string[] {
   const paths: string[] = [];
 
-  // 1. Project-local config (.pi/damage-control/patterns.yaml)
-  paths.push(join(cwd, ".pi", "damage-control", "patterns.yaml"));
+  // 1. Project-local config (.pi/defender/patterns.yaml)
+  paths.push(join(cwd, ".pi", "defender", "patterns.yaml"));
 
-  // 2. Global user config (~/.pi/damage-control/patterns.yaml)
-  paths.push(join(homedir(), ".pi", "damage-control", "patterns.yaml"));
+  // 2. Global user config (~/.pi/defender/patterns.yaml)
+  paths.push(join(homedir(), ".pi", "defender", "patterns.yaml"));
 
   return paths;
 }

@@ -1,11 +1,11 @@
 {
-  "name": "pi-damage-control",
+  "name": "pi-defender",
   "version": "1.0.1",
-  "description": "Defense-in-depth protection for Pi coding agent. Blocks dangerous commands and protects sensitive files.",
+  "description": "Defense-in-depth protection for Pi coding agent. Blocks dangerous commands and protects sensitive files — rename of pi-damage-control.",
   "license": "MIT",
   "author": "Serhioromano",
-  "repository": "github:Serhioromano/pi-damage-control",
-  "keywords": ["pi", "pi-extension", "security", "protection", "damage-control"],
+  "repository": "github:Serhioromano/pi-defender",
+  "keywords": ["pi", "pi-extension", "security", "protection", "defender", "damage-control"],
   "dependencies": {
     "yaml": "^2.7.0"
   },
