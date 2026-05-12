@@ -473,7 +473,7 @@ export default function (pi: ExtensionAPI) {
             "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",
-            "success",
+            "info",
           );
         }
       }
