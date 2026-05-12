@@ -158,6 +158,15 @@ readOnlyPaths:
   - "*.min.css"
 
 # -----------------------------------------------------------------------------
+# STRICT MODE WHITELIST — Auto-approve in strict mode
+# -----------------------------------------------------------------------------
+# Commands matching these patterns skip the strict mode prompt.
+# Patterns are JS regex. Add via the "Allow & Whitelist" selector option.
+# -----------------------------------------------------------------------------
+
+strictModeWhiteList: []
+
+# -----------------------------------------------------------------------------
 # NO-DELETE PATHS — Can read/write/edit, but not delete
 # -----------------------------------------------------------------------------
 # Protect important files from accidental deletion.

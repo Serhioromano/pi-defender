@@ -57,6 +57,7 @@ pi.on("session_shutdown") → clears cached config
 - **zeroAccessPaths**: no read/write/delete (secrets, keys)
 - **readOnlyPaths**: read OK, write/edit blocked (system files, lockfiles)
 - **noDeletePaths**: read/write/edit OK, delete blocked (project docs)
+- **strictModeWhiteList**: regex patterns — commands matching these skip strict mode prompts
 
 ### Pattern matching (config.ts:checkCommand)
 
@@ -66,6 +67,12 @@ pi.on("session_shutdown") → clears cached config
 4. Checks if command deletes `noDeletePaths` (delete patterns only)
 
 Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
+
+### Whitelist (config.ts)
+
+- **checkWhitelist(command, config)** → `{ matched, pattern }` — tests command against all `strictModeWhiteList` regex patterns
+- **generateWhitelistPattern(command)** — escapes regex-special chars, returns a literal-match pattern
+- **addPatternToWhitelist(cwd, pattern)** — reads/creates `.pi/patterns.yaml`, appends pattern to `strictModeWhiteList`, writes back. Returns `{ added, reason }`. Auto-creates `.pi/` dir and file as needed.
 
 ### Bash handler tiers (index.ts)
 
@@ -77,7 +84,10 @@ Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
 2. ABORTED STATE → blocks all bash with 🛡️❌ message
    - Also blocks Write/Edit tools (separate handler checks aborted flag)
 
-3. STRICT MODE → strictModePrompt() selector: ✅ Approve / ⚠️ Deny / ⭐ Approve All / ❌ Abort
+3. STRICT MODE → whitelist check → approveAll check → strictModePrompt() selector:
+     ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Allow & Whitelist / ❌ Abort
+   - Whitelist check runs first: if command matches strictModeWhiteList pattern → auto-approve
+   - Whitelist save: generates regex from command, writes to .pi/patterns.yaml, reloads config
    - approveAllSession flag auto-approves safe commands
    - Abort → calls ctx.abort() + sets aborted=true
 
@@ -88,7 +98,7 @@ Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
 
 Two custom UI prompts using `ctx.ui.custom()`:
 - **patternBlockedPrompt**: 2 options, yellow/warning theme, shows pattern reason
-- **strictModePrompt**: 4 options, accent theme, shows command preview
+- **strictModePrompt**: 5 options, accent theme, shows command preview
 
 Both fall back to `ctx.ui.confirm()` if custom UI unavailable.
 

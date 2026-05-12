@@ -45,12 +45,14 @@ For destructive-but-valid commands (`git push --force`, `git push --delete`, `np
 ### 🔒 Strict Mode
 Block ALL bash tool execution and require explicit user approval for every command. Perfect when you want to review every action the agent takes.
 
-- **Selector UI**: Arrow-key navigable selector with 4 options per command:
+- **Selector UI**: Arrow-key navigable selector with 5 options per command:
   - ✅ **Approve** — run this command once
   - ⚠️ **Deny (try something else)** — block this command, agent can try alternative approach
   - ⭐ **Approve All Session** — auto-approve all future safe commands (patterns.yaml blocked rules still enforced)
+  - 📋 **Allow & Whitelist** — remember this command pattern for future sessions
   - ❌ **Abort (stop all execution)** — block this command AND lock all future bash commands until reset
-- **patterns.yaml always enforced**: Commands matching blocked patterns are never allowed, even with approve-all
+- **patterns.yaml always enforced**: Commands matching blocked patterns are never allowed, even with approve-all or whitelist
+- **Whitelist**: Save trusted commands to `.pi/patterns.yaml` for persistent auto-approval across sessions
 - Toggle with `/defender:strict` (on|off, or no parameter to toggle)
 - Shows 🛡️🔒 badge when active
 
@@ -132,6 +134,11 @@ noDeletePaths:
   - .pi/
   - LICENSE
   - README.md
+
+strictModeWhiteList:
+  - npm\\ test
+  - git\\ status
+  - ls\\ -la
 ```
 
 **Path pattern support:**
@@ -177,6 +184,7 @@ When the agent tries to run a bash command, a selector appears:
  ▶ ✅ Approve this command
    ⚠️ Deny (try something else)
    ⭐ Approve ALL session (skip future prompts for safe commands)
+   📋 Allow & Whitelist (remember for future)
    ❌ Abort (stop all execution)
 
  ↑↓ navigate · enter select · esc deny
@@ -196,6 +204,16 @@ Selecting ❌ **Abort (stop all execution)** blocks the current command AND lock
 ```
 
 This is useful when the agent is going in a wrong direction and you want to stop it completely.
+
+### Whitelist
+
+When strict mode prompts you for a command you trust (like `npm test` or `git status`), select 📋 **Allow & Whitelist** to save a regex pattern for it. Future runs of the same command are auto-approved — no prompt needed.
+
+- Pattern is saved to `.pi/patterns.yaml` under `strictModeWhiteList`
+- The file is created automatically if it doesn't exist
+- Duplicate patterns are detected and not re-added
+- When a whitelisted command runs, a notification shows which pattern matched
+- Patterns are JS regex — you can manually edit `.pi/patterns.yaml` to refine them
 
 ### Deactivate
 

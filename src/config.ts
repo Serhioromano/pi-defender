@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 // =============================================================================
 // TYPES
@@ -17,6 +17,7 @@ export interface Config {
   zeroAccessPaths: string[];
   readOnlyPaths: string[];
   noDeletePaths: string[];
+  strictModeWhiteList: string[];
 }
 
 // =============================================================================
@@ -111,6 +112,7 @@ function parseConfigFile(path: string): Config | null {
       zeroAccessPaths: (raw.zeroAccessPaths as string[]) || [],
       readOnlyPaths: (raw.readOnlyPaths as string[]) || [],
       noDeletePaths: (raw.noDeletePaths as string[]) || [],
+      strictModeWhiteList: (raw.strictModeWhiteList as string[]) || [],
     };
   } catch {
     return null;
@@ -123,6 +125,7 @@ function mergeConfigs(...configs: Config[]): Config {
     zeroAccessPaths: configs.flatMap(c => c.zeroAccessPaths),
     readOnlyPaths: configs.flatMap(c => c.readOnlyPaths),
     noDeletePaths: configs.flatMap(c => c.noDeletePaths),
+    strictModeWhiteList: configs.flatMap(c => c.strictModeWhiteList),
   };
 }
 
@@ -138,7 +141,7 @@ export function loadConfig(cwd: string): Config {
   }
 
   if (configs.length === 0) {
-    return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [] };
+    return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [], strictModeWhiteList: [] };
   }
 
   return mergeConfigs(...configs);
@@ -338,6 +341,87 @@ export function checkCommand(command: string, config: Config): CheckResult {
   }
 
   return { blocked: false,  reason: "" };
+}
+
+// =============================================================================
+// WHITELIST CHECKING — strict mode auto-approve
+// =============================================================================
+
+export function checkWhitelist(command: string, config: Config): { matched: boolean; pattern: string } {
+  for (const pattern of config.strictModeWhiteList) {
+    try {
+      const regex = new RegExp(pattern, "i");
+      if (regex.test(command)) {
+        return { matched: true, pattern };
+      }
+    } catch {
+      continue;
+    }
+  }
+  return { matched: false, pattern: "" };
+}
+
+/**
+ * Generate a regex pattern from a bash command.
+ * Escapes special chars while preserving command structure.
+ */
+export function generateWhitelistPattern(command: string): string {
+  const trimmed = command.trim();
+  // Escape regex special chars, preserving the literal command as a pattern
+  return trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Add a pattern to the strictModeWhiteList in the project's .pi/patterns.yaml.
+ * Creates the file and directory if they don't exist.
+ * Does NOT duplicate existing patterns.
+ */
+export function addPatternToWhitelist(cwd: string, pattern: string): { added: boolean; reason: string } {
+  const piDir = join(cwd, ".pi");
+  const patternsPath = join(piDir, "patterns.yaml");
+
+  // Create .pi directory if needed
+  if (!existsSync(piDir)) {
+    try {
+      mkdirSync(piDir, { recursive: true });
+    } catch {
+      return { added: false, reason: `Failed to create directory: ${piDir}` };
+    }
+  }
+
+  // Read or initialize the file
+  let raw: Record<string, unknown>;
+  if (existsSync(patternsPath)) {
+    try {
+      const content = readFileSync(patternsPath, "utf-8");
+      raw = parseYaml(content) as Record<string, unknown>;
+    } catch {
+      raw = {};
+    }
+  } else {
+    raw = {};
+  }
+
+  // Ensure strictModeWhiteList exists
+  const existingList: string[] = (raw.strictModeWhiteList as string[]) || [];
+
+  // Check for duplicates
+  if (existingList.includes(pattern)) {
+    return { added: false, reason: `Pattern already in whitelist: ${pattern}` };
+  }
+
+  // Add the pattern
+  existingList.push(pattern);
+  raw.strictModeWhiteList = existingList;
+
+  // Write back
+  try {
+    const yamlStr = stringifyYaml(raw, { lineWidth: 120 });
+    writeFileSync(patternsPath, yamlStr, "utf-8");
+    return { added: true, reason: "" };
+  } catch (e) {
+    return { added: false, reason: `Failed to write patterns: ${String(e)}` };
+  }
 }
 
 // =============================================================================

@@ -12,7 +12,8 @@
  *   - Bash tool: path reference detection in commands
  *   - Strict mode: block ALL bash commands, require user approval per command
  *   - Approve-all session: auto-approve safe commands in strict mode
- *   - Interactive selector UI with approve/deny/approve-all options
+ *   - Interactive selector UI with approve/deny/approve-all/whitelist options
+ *   - Strict mode whitelist: auto-approve remembered commands
  *   - YAML configuration (project-local or global)
  *   - Management commands: /defender:reload, /defender:status, /defender:patterns, /defender:strict
  *
@@ -22,7 +23,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { loadConfig, checkCommand, checkFileAccess, type Config } from "./config";
+import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPattern, addPatternToWhitelist, type Config } from "./config";
 
 // =============================================================================
 // EXTENSION
@@ -138,7 +139,7 @@ export default function (pi: ExtensionAPI) {
   // STRICT MODE SELECTOR
   // ===========================================================================
 
-  async function strictModePrompt(ctx: any, command: string): Promise<"approve" | "deny" | "approve_all" | "abort"> {
+  async function strictModePrompt(ctx: any, command: string): Promise<"approve" | "deny" | "approve_all" | "abort" | "whitelist"> {
     const displayCmd = command.length > 80 ? command.slice(0, 77) + "..." : command;
 
     // Try custom UI selector first
@@ -149,8 +150,9 @@ export default function (pi: ExtensionAPI) {
             let selectedIndex = 0;
             const options = [
               { value: "approve", label: "✅ Approve this command" },
-              { value: "deny", label: "⚠️ Deny (try something else)" },
+              { value: "whitelist", label: "📋 Approve & Whitelist (remember for future)" },
               { value: "approve_all", label: "⭐ Approve ALL session (skip future prompts for safe commands)" },
+              { value: "deny", label: "⚠️ Deny (try something else)" },
               { value: "abort", label: "❌ Abort (stop all execution)" },
             ];
 
@@ -195,7 +197,7 @@ export default function (pi: ExtensionAPI) {
             };
           },
         );
-        return (result ?? "deny") as "approve" | "deny" | "approve_all" | "abort";
+        return (result ?? "deny") as "approve" | "deny" | "approve_all" | "abort" | "whitelist";
       } catch {
         // Fall through to confirm fallback
       }
@@ -298,6 +300,17 @@ export default function (pi: ExtensionAPI) {
 
     // 3. STRICT MODE — block all bash unless approved
     if (strictMode) {
+      // Check whitelist first — auto-approve if command matches a whitelisted pattern
+      const whitelistCheck = checkWhitelist(command, config);
+      if (whitelistCheck.matched) {
+        stats.strictApproved++;
+        ctx.ui.notify(
+          `🛡️🔒 Strict Mode: whitelisted ✅ — pattern: \`${whitelistCheck.pattern}\` — ${command.length > 60 ? command.slice(0, 57) + "..." : command}`,
+          "info",
+        );
+        return undefined;
+      }
+
       // approveAllSession auto-approves commands not blocked by patterns.yaml
       if (approveAllSession) {
         stats.strictApproved++;
@@ -334,6 +347,29 @@ export default function (pi: ExtensionAPI) {
         // Cancel the agent's turn to prevent it from trying alternative approaches
         ctx.abort?.();
         return { block: true, reason: "Execution aborted by user — use /defender:strict off to reset" };
+      }
+
+      if (choice === "whitelist") {
+        // Generate a regex pattern from the command and save to .pi/patterns.yaml
+        const whitelistPattern = generateWhitelistPattern(command);
+        const result = addPatternToWhitelist(ctx.cwd, whitelistPattern);
+
+        if (result.added) {
+          // Reload config to pick up the new whitelist entry
+          currentConfig = null;
+          stats.strictApproved++;
+          ctx.ui.notify(
+            `🛡️🔒 Strict Mode: whitelisted 📋 — pattern \`${whitelistPattern}\` saved to .pi/patterns.yaml`,
+            "info",
+          );
+        } else {
+          stats.strictApproved++;
+          ctx.ui.notify(
+            `🛡️🔒 Strict Mode: approved (whitelist save: ${result.reason}) — ${command.length > 60 ? command.slice(0, 57) + "..." : command}`,
+            "warning",
+          );
+        }
+        return undefined;
       }
 
       if (choice === "approve_all") {
@@ -433,6 +469,7 @@ export default function (pi: ExtensionAPI) {
         `  Strict mode: ${strictStatus}\n` +
         `  Strict: ${stats.strictApproved} approved | ${stats.strictBlocked} blocked | ${stats.strictApprovedAll} approve-all\n` +
         `  Bash patterns: ${config.bashToolPatterns.length}\n` +
+        `  Whitelist patterns: ${config.strictModeWhiteList.length}\n` +
         `  Zero-access paths: ${config.zeroAccessPaths.length}\n` +
         `  Read-only paths: ${config.readOnlyPaths.length}\n` +
         `  No-delete paths: ${config.noDeletePaths.length}`,
@@ -467,7 +504,7 @@ export default function (pi: ExtensionAPI) {
           aborted = false;
           ctx.ui.notify(
             "🛡️🔒 Strict Mode ACTIVATED — ALL bash commands now require your approval\n" +
-            "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / ❌ Abort\n" +
+            "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Whitelist / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",
             "info",
@@ -503,7 +540,7 @@ export default function (pi: ExtensionAPI) {
           aborted = false;
           ctx.ui.notify(
             "🛡️🔒 Strict Mode ACTIVATED — ALL bash commands now require your approval\n" +
-            "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / ❌ Abort\n" +
+            "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Whitelist / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",
             "info",

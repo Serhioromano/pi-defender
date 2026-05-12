@@ -4,7 +4,21 @@ All notable changes to Pi Defender will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed
+### Added
+- **Strict Mode Whitelist**: New 📋 "Allow & Whitelist" option in the strict mode selector. When selected, saves a regex pattern for the approved command to `.pi/patterns.yaml` under `strictModeWhiteList`. Future runs of the same command are auto-approved — no prompt needed.
+  - Whitelist check runs before the strict mode prompt — matching commands skip the selector entirely
+  - Pattern is generated from the command string (regex-special chars escaped)
+  - `.pi/patterns.yaml` is auto-created if it doesn't exist
+  - Duplicate patterns are detected and not re-added
+  - Notification shows the matched pattern when whitelist is applied
+  - Config is reloaded immediately after saving so the pattern takes effect in the same session
+- New `strictModeWhiteList` section in `patterns.yaml` — array of JS regex patterns
+- New functions in `config.ts`: `checkWhitelist()`, `generateWhitelistPattern()`, `addPatternToWhitelist()`
+- `/defender:status` now shows whitelist pattern count
+
+### Changed
+- `strictModePrompt()` selector now has 5 options (added "Allow & Whitelist")
+- Strict mode activation notification updated to mention the whitelist option
 - **Deny/Abort now truly stops execution**: When user selects "Deny" on a patterns.yaml block or "Abort" in strict mode, `ctx.abort()` is now called to cancel the agent's turn, preventing it from trying alternative approaches (different bash commands, Write/Edit bypasses, etc.). Previously only future bash commands were blocked, but the agent could still use Write/Edit/Read tools or try different bash commands in the same reasoning loop.
 - **Write/Edit blocked during abort state**: The Write/Edit tool handler now checks the `aborted` flag and blocks all file operations when execution is aborted. Previously the abort state only affected bash commands, allowing the agent to bypass via Write/Edit.
 
