@@ -22,60 +22,32 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseYaml } from "yaml";
 import { loadConfig, checkCommand, checkFileAccess, type Config } from "./config";
 
 // =============================================================================
-// DEFAULT PATTERNS (bundled, used when no YAML config found)
+// BUNDLED DEFAULTS — loaded from src/patterns.yaml (single source of truth)
 // =============================================================================
 
-const DEFAULT_BASH_PATTERNS = [
-  { pattern: "\\brm\\s+-[rRf]", reason: "rm with recursive or force flags" },
-  { pattern: "\\bfind\\s+.*\\s+-delete\\b", reason: "find with -delete" },
-  { pattern: "\\bsudo\\b", reason: "sudo command execution" },
-  { pattern: "\\bDROP\\s+(TABLE|DATABASE|SCHEMA)\\b", reason: "SQL DROP statement" },
-  { pattern: "\\bDELETE\\s+FROM\\s+\\w+\\s*;", reason: "DELETE without WHERE clause" },
-  { pattern: "\\bTRUNCATE\\s+(TABLE\\s+)?\\w+", reason: "SQL TRUNCATE" },
-  { pattern: "\\bgit\\s+push\\s+.*--force", reason: "git push --force", ask: true },
-  { pattern: "\\bgit\\s+push\\s+.*--delete\\b", reason: "git push --delete", ask: true },
-  { pattern: "\\bgit\\s+reset\\s+--hard\\b", reason: "git reset --hard" },
-  { pattern: "\\bgit\\s+clean\\s+-[fd]+", reason: "git clean" },
-  { pattern: "\\bcurl\\s+.*\\|\\s*(ba)?sh", reason: "curl piped to bash" },
-  { pattern: "\\bwget\\s+.*\\|\\s*(ba)?sh", reason: "wget piped to bash" },
-  { pattern: "\\bdd\\s+if=", reason: "dd disk operations" },
-  { pattern: "\\bmkfs\\.\\w+", reason: "filesystem formatting" },
-  { pattern: "\\bdocker\\s+rm\\s+-f\\b", reason: "docker forced container removal" },
-  { pattern: "\\bnpm\\s+unpublish\\b", reason: "npm unpublish", ask: true },
-  { pattern: "\\bchmod\\s+.*777", reason: "chmod 777 (world-writable)" },
-  { pattern: "\\bchown\\s+-R\\b", reason: "recursive chown" },
-  { pattern: ":\\(\\)\\s*\\{", reason: "fork bomb pattern" },
-  { pattern: "\\b(shutdown|reboot|halt|poweroff)\\b", reason: "system shutdown/reboot" },
-];
-
-const DEFAULT_ZERO_ACCESS = [
-  "~/.ssh/", "~/.aws/", "*.pem", "*.key", "id_rsa", "id_ed25519",
-  ".env.production.local", "*-credentials.json", "*-secrets.yaml",
-];
-
-const DEFAULT_READ_ONLY = [
-  "/etc/", "~/.bashrc", "~/.zshrc", "~/.profile",
-  "*.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-];
-
-const DEFAULT_NO_DELETE = [
-  ".pi/", "LICENSE", "README.md", "CHANGELOG.md",
-];
-
-function getDefaultConfig(): Config {
-  return {
-    bashToolPatterns: DEFAULT_BASH_PATTERNS,
-    zeroAccessPaths: DEFAULT_ZERO_ACCESS,
-    readOnlyPaths: DEFAULT_READ_ONLY,
-    noDeletePaths: DEFAULT_NO_DELETE,
-  };
+function getBundledDefaults(): Config {
+  try {
+    const bundledPath = join(__dirname, "patterns.yaml");
+    if (existsSync(bundledPath)) {
+      const raw = parseYaml(readFileSync(bundledPath, "utf-8")) as Record<string, unknown>;
+      return {
+        bashToolPatterns: (raw.bashToolPatterns as Config["bashToolPatterns"]) || [],
+        zeroAccessPaths: (raw.zeroAccessPaths as string[]) || [],
+        readOnlyPaths: (raw.readOnlyPaths as string[]) || [],
+        noDeletePaths: (raw.noDeletePaths as string[]) || [],
+      };
+    }
+  } catch {
+    // Fall through to empty defaults
+  }
+  return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [] };
 }
 
 // =============================================================================
@@ -92,12 +64,13 @@ export default function (pi: ExtensionAPI) {
   function getConfig(cwd: string): Config {
     if (currentConfig) return currentConfig;
     const loaded = loadConfig(cwd);
-    // Merge with defaults: user config takes precedence, defaults fill gaps
+    // Merge with bundled defaults: user config takes precedence, defaults fill gaps
+    const defaults = getBundledDefaults();
     currentConfig = {
-      bashToolPatterns: loaded.bashToolPatterns.length > 0 ? loaded.bashToolPatterns : getDefaultConfig().bashToolPatterns,
-      zeroAccessPaths: loaded.zeroAccessPaths.length > 0 ? loaded.zeroAccessPaths : getDefaultConfig().zeroAccessPaths,
-      readOnlyPaths: loaded.readOnlyPaths.length > 0 ? loaded.readOnlyPaths : getDefaultConfig().readOnlyPaths,
-      noDeletePaths: loaded.noDeletePaths.length > 0 ? loaded.noDeletePaths : getDefaultConfig().noDeletePaths,
+      bashToolPatterns: loaded.bashToolPatterns.length > 0 ? loaded.bashToolPatterns : defaults.bashToolPatterns,
+      zeroAccessPaths: loaded.zeroAccessPaths.length > 0 ? loaded.zeroAccessPaths : defaults.zeroAccessPaths,
+      readOnlyPaths: loaded.readOnlyPaths.length > 0 ? loaded.readOnlyPaths : defaults.readOnlyPaths,
+      noDeletePaths: loaded.noDeletePaths.length > 0 ? loaded.noDeletePaths : defaults.noDeletePaths,
     };
     return currentConfig;
   }
@@ -115,6 +88,86 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ===========================================================================
+  // PATTERN-BLOCKED SELECTOR (patterns.yaml violations)
+  // ===========================================================================
+
+  async function patternBlockedPrompt(ctx: any, command: string, reason: string): Promise<"allow" | "deny"> {
+    const displayCmd = command.length > 80 ? command.slice(0, 77) + "..." : command;
+    const displayReason = reason.length > 100 ? reason.slice(0, 97) + "..." : reason;
+
+    if (typeof ctx.ui?.custom === "function") {
+      try {
+        const result = await ctx.ui.custom(
+          (_tui: any, theme: any, _kb: any, done: (value: string) => void) => {
+            let selectedIndex = 0;
+            const options = [
+              { value: "allow", label: "⚠️ Allow anyway (dangerous)" },
+              { value: "deny", label: "❌ Deny & Abort (stop entire prompt)" },
+            ];
+
+            function render(width: number): string[] {
+              const lines: string[] = [];
+              const sep = "─".repeat(Math.min(width, 80));
+              lines.push(theme.fg("warning", sep));
+              lines.push(theme.fg("warning", theme.bold(" 🛡️ BLOCKED by patterns.yaml")));
+              lines.push("");
+              lines.push(theme.fg("dim", `  ${displayCmd}`));
+              lines.push("");
+              lines.push(theme.fg("warning", `  Reason: ${displayReason}`));
+              lines.push("");
+              for (let i = 0; i < options.length; i++) {
+                const isSelected = i === selectedIndex;
+                const prefix = isSelected ? theme.fg("accent", "▶") : " ";
+                const label = isSelected
+                  ? theme.fg("accent", options[i].label)
+                  : options[i].label;
+                lines.push(` ${prefix} ${label}`);
+              }
+              lines.push("");
+              lines.push(theme.fg("dim", " ↑↓ navigate · enter select · esc deny"));
+              lines.push(theme.fg("warning", sep));
+              return lines;
+            }
+
+            return {
+              render,
+              invalidate: () => {},
+              handleInput: (data: string) => {
+                if (data === "\x1b[A" || data === "k") {
+                  selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+                  _tui.requestRender();
+                } else if (data === "\x1b[B" || data === "j") {
+                  selectedIndex = (selectedIndex + 1) % options.length;
+                  _tui.requestRender();
+                } else if (data === "\r" || data === "\n") {
+                  done(options[selectedIndex].value);
+                } else if (data === "\x1b") {
+                  done("deny");
+                }
+              },
+            };
+          },
+        );
+        return (result ?? "deny") as "allow" | "deny";
+      } catch {
+        // Fall through to confirm fallback
+      }
+    }
+
+    // Fallback: confirm dialog
+    if (typeof ctx.ui?.confirm === "function") {
+      const allowed = await ctx.ui.confirm(
+        "🛡️ BLOCKED by patterns.yaml",
+        `${displayCmd}\n\nReason: ${displayReason}\n\nAllow this dangerous command anyway?\n(No = deny & abort entire prompt)`,
+      );
+      return allowed ? "allow" : "deny";
+    }
+
+    // No UI — deny by default
+    return "deny";
+  }
+
+  // ===========================================================================
   // STRICT MODE SELECTOR
   // ===========================================================================
 
@@ -124,7 +177,7 @@ export default function (pi: ExtensionAPI) {
     // Try custom UI selector first
     if (typeof ctx.ui?.custom === "function") {
       try {
-        const result = await ctx.ui.custom<string>(
+        const result = await ctx.ui.custom(
           (_tui: any, theme: any, _kb: any, done: (value: string) => void) => {
             let selectedIndex = 0;
             const options = [
@@ -213,11 +266,36 @@ export default function (pi: ExtensionAPI) {
     const config = getConfig(ctx.cwd);
     const result = checkCommand(command, config);
 
-    // 1. PATTERNS.YAML BLOCKED — always enforced (even in strict mode)
+    // 1. PATTERNS.YAML BLOCKED — prompt user (allow or deny & abort)
     if (result.blocked) {
       stats.blocked++;
-      ctx.ui.notify(`🛡️ BLOCKED: ${result.reason}`, "error");
-      return { block: true, reason: result.reason };
+
+      // No UI — block
+      if (!ctx.hasUI) {
+        ctx.ui.notify(`🛡️ BLOCKED by patterns.yaml: ${result.reason}`, "error");
+        return { block: true, reason: `Blocked by patterns.yaml: ${result.reason}` };
+      }
+
+      // Show selector: Allow / Deny & Abort
+      const choice = await patternBlockedPrompt(ctx, command, result.reason);
+
+      if (choice === "deny") {
+        aborted = true;
+        stats.strictBlocked++;
+        ctx.ui.notify(
+          `🛡️❌ Denied & Aborted — patterns.yaml: ${result.reason}. Use /defender:strict off to reset.`,
+          "error",
+        );
+        return { block: true, reason: `Denied by user (patterns.yaml: ${result.reason}) — execution aborted` };
+      }
+
+      // User allowed the dangerous command
+      ctx.ui.notify(
+        `⚠️ Allowed by user (patterns.yaml: ${result.reason}) — ${command.length > 60 ? command.slice(0, 57) + "..." : command}`,
+        "warning",
+      );
+      stats.allowed++;
+      return undefined;
     }
 
     // 2. ABORTED STATE — block all bash after user aborted
@@ -404,7 +482,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("defender:patterns", {
-    description: "Initialize project-local patterns.yaml from template",
+    description: "Initialize project-local patterns.yaml from bundled defaults",
     handler: async (_args, ctx) => {
       const dir = join(ctx.cwd, ".pi", "defender");
       const file = join(dir, "patterns.yaml");
@@ -414,9 +492,19 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      const sourcePath = join(__dirname, "patterns.yaml");
+      if (!existsSync(sourcePath)) {
+        ctx.ui.notify("Bundled patterns.yaml not found — using built-in defaults", "warning");
+        // Fallback: write minimal template
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(file, PATTERNS_YAML_TEMPLATE, "utf-8");
+        ctx.ui.notify(`✅ Created ${file} from minimal template — edit it to customize, then /defender:reload`, "info");
+        return;
+      }
+
       mkdirSync(dir, { recursive: true });
-      writeFileSync(file, PATTERNS_YAML_TEMPLATE, "utf-8");
-      ctx.ui.notify(`✅ Created ${file} — edit it to customize protection rules, then /defender:reload`, "info");
+      copyFileSync(sourcePath, file);
+      ctx.ui.notify(`✅ Created ${file} from bundled defaults — edit it to customize protection rules, then /defender:reload`, "info");
     },
   });
 

@@ -9,7 +9,9 @@ Defense-in-depth protection for [Pi](https://github.com/badlogic/pi-mono) coding
 ## Features
 
 ### 🔒 Bash Command Protection
-Regex patterns to block dangerous commands before execution:
+Regex patterns to block dangerous commands before execution. Instead of auto-blocking, shows a selector:
+- ⚠️ **Allow anyway** — run the dangerous command despite the warning
+- ❌ **Deny & Abort** — stop the entire prompt, all future bash blocked until reset
 
 | Category | Examples |
 |----------|----------|
@@ -87,9 +89,9 @@ Defender loads configuration in this order:
 
 1. **Project-local**: `.pi/defender/patterns.yaml` *(project root)*
 2. **Global**: `~/.pi/defender/patterns.yaml` *(user home)*
-3. **Built-in defaults**: hardcoded patterns *(fallback)*
+3. **Bundled defaults**: `src/patterns.yaml` *(shipped with the extension)*
 
-First match wins. If project config exists, global config is ignored.
+First match wins. If project config exists, global and bundled are ignored.
 
 ### Initialize project config
 
@@ -99,7 +101,7 @@ In your Pi session:
 /defender:patterns
 ```
 
-This creates `.pi/defender/patterns.yaml` with a starter template.
+This copies the bundled `src/patterns.yaml` into `.pi/defender/patterns.yaml`. Edit it to customize.
 
 ### patterns.yaml structure
 
@@ -215,13 +217,14 @@ Or toggle without a parameter:
   ...
 ```
 
-## What Gets Blocked
+## What Gets Blocked / Prompted
 
-### Bash commands blocked:
-- Commands matching any `bashToolPatterns` regex
-- Commands referencing `zeroAccessPaths` (any operation, including reads)
-- Commands referencing `readOnlyPaths` with write/edit/delete patterns
-- Commands referencing `noDeletePaths` with delete patterns
+### Bash commands matching patterns.yaml:
+- Instead of auto-blocking, shows a **selector**: ⚠️ Allow anyway / ❌ Deny & Abort
+- Deny stops the entire prompt — all future bash blocked until `/defender:strict off`
+- Patterns checked: `bashToolPatterns` regex matches, `zeroAccessPaths` references, `readOnlyPaths`/`noDeletePaths` operations
+
+### Bash commands referencing paths:
 
 ### Edit/Write blocked:
 - Any path matching `zeroAccessPaths`
@@ -247,8 +250,9 @@ pi-defender/
 ├── src/
 │   ├── index.ts           # Extension entry point
 │   ├── config.ts          # Config loading, pattern matching, path checking
-│   └── patterns.yaml      # Bundled default patterns (reference)
+│   └── patterns.yaml      # Single source of truth — bundled defaults
 ├── README.md
+├── CHANGELOG.md
 └── LICENSE
 ```
 

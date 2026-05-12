@@ -21,7 +21,15 @@ All notable changes to Pi Defender will be documented in this file.
 - `/defender:status` now shows strict mode state, abort state, and per-mode statistics
 
 ### Changed
-- Bash tool_call handler restructured with 3-tier logic: patterns → strict mode → normal mode
+- **`src/patterns.yaml` is now the single source of truth** for all default patterns
+  - Removed hardcoded `DEFAULT_BASH_PATTERNS`, `DEFAULT_ZERO_ACCESS`, etc. from `index.ts`
+  - Bundled YAML parsed at init via `getBundledDefaults()` — patterns stay in one place
+  - `/defender:patterns` copies the source file directly instead of using a separate template string
+- **patterns.yaml matches no longer auto-block** — instead shows a selector:
+  - ⚠️ **Allow anyway** — run the dangerous command, skip further checks
+  - ❌ **Deny & Abort** — stop entire prompt, lock all future bash until reset
+- Notification messages now explicitly mention "patterns.yaml" as the source of the block
+- Bash tool_call handler restructured with 4-tier logic: patterns → aborted → strict → normal
 
 ## [1.1.0] - 2024
 
