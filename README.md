@@ -43,9 +43,10 @@ Regex patterns to block dangerous commands before execution. Instead of auto-blo
 ### ⚠️ Ask Mode
 For destructive-but-valid commands (`git push --force`, `git push --delete`, `npm unpublish`), instead of blocking outright, the extension shows a confirmation dialog. You decide.
 
-### 🔒 Strict Mode
+### 🔒 Strict Mode (ON by default)
 Block ALL bash tool execution and require explicit user approval for every command. Perfect when you want to review every action the agent takes.
 
+- **ON by default** — you get protection out of the box. Use `/defender:strict off` to disable.
 - **Selector UI**: Arrow-key navigable selector with 5 options per command:
   - ✅ **Approve** — run this command once
   - ⚠️ **Deny (try something else)** — block this command, agent can try alternative approach
@@ -164,13 +165,29 @@ Shows: blocked/allowed/asked counts and active config summary.
 
 Strict mode adds an extra layer of protection — **every** bash command must be explicitly approved.
 
-### Activate
+### ON by default
+
+Strict mode is **active from the first session**. You'll see:
+
+```
+🛡️ Defender vX.Y.Z active 🔒 Strict Mode ON (30 patterns, 18 zero-access, 24 read-only)
+```
+
+### Deactivate
+
+```
+/defender:strict off
+```
+
+### Re-activate
+
+If you turned it off, re-enable with:
 
 ```
 /defender:strict on
 ```
 
-You'll see: 🛡️🔒 Strict Mode ACTIVATED — ALL bash commands now require your approval
+You'll see: 🛡️🔒 Strict Mode ACTIVATED (default) — ALL bash commands now require your approval
 
 ### Workflow
 
@@ -222,6 +239,8 @@ When strict mode prompts you for a command you trust (like `npm test` or `git st
 /defender:strict off
 ```
 
+You'll see: 🛡️ Strict Mode DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.
+
 Or toggle without a parameter:
 
 ```
@@ -235,7 +254,7 @@ Or toggle without a parameter:
 ```
 🛡️ Defender Stats
   Allowed: 42 | Blocked: 3 | Asked: 2
-  Strict mode: 🔒 ACTIVE (approve-all session)
+  Strict mode: 🔒 ACTIVE (default) (approve-all session)
   Strict: 15 approved | 2 blocked | 1 approve-all
   ...
 ```

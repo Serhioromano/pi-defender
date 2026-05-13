@@ -22,7 +22,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
 import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPattern, addPatternToWhitelist, type Config } from "./config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,7 +43,7 @@ const DEFENDER_VERSION: string = (() => {
 export default function (pi: ExtensionAPI) {
   let currentConfig: Config | null = null;
   let stats = { blocked: 0, asked: 0, allowed: 0, strictBlocked: 0, strictApproved: 0, strictApprovedAll: 0 };
-  let strictMode = false;
+  let strictMode = true; // ON by default
   let approveAllSession = false;
   let aborted = false;
   let needsInitNotify = true;
@@ -61,7 +61,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     const config = getConfig(ctx.cwd);
     ctx.ui.notify(
-      `🛡️ Defender v${DEFENDER_VERSION} active (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+      `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
       "info",
     );
   });
@@ -172,6 +172,7 @@ export default function (pi: ExtensionAPI) {
               const sep = "─".repeat(Math.min(width, 80));
               lines.push(theme.fg("accent", sep));
               lines.push(theme.fg("accent", theme.bold(" 🛡️🔒 Strict Mode — Bash Command")));
+              lines.push(`  ${theme.fg("muted","Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("muted", "to turn Strict Mode off and stop these prompts to popup.")}`);
               lines.push("");
               lines.push(theme.fg("dim", `  ${displayCmd}`));
               lines.push("");
@@ -251,7 +252,7 @@ export default function (pi: ExtensionAPI) {
       needsInitNotify = false;
       const config = getConfig(ctx.cwd);
       ctx.ui.notify(
-        `🛡️ Defender v${DEFENDER_VERSION} active (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+        `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
         "info",
       );
     }
@@ -470,10 +471,10 @@ export default function (pi: ExtensionAPI) {
       const config = getConfig(ctx.cwd);
       const abortStatus = aborted ? " ❌ ABORTED" : "";
       const strictStatus = strictMode
-        ? `🔒 ACTIVE${approveAllSession ? " (approve-all session)" : ""}${abortStatus}`
+        ? `🔒 ACTIVE (default)${approveAllSession ? " (approve-all session)" : ""}${abortStatus}`
         : aborted
           ? `❌ ABORTED (use /defender:strict off to reset)`
-          : "⚪ OFF";
+          : "⚪ OFF (non-default)";
       ctx.ui.notify(
         `🛡️ Defender Stats\n` +
         `  Allowed: ${stats.allowed} | Blocked: ${stats.blocked} | Asked: ${stats.asked}\n` +
@@ -495,7 +496,7 @@ export default function (pi: ExtensionAPI) {
       currentConfig = null;
       const config = getConfig(ctx.cwd);
       ctx.ui.notify(
-        `🛡️ Defender v${DEFENDER_VERSION} active (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+        `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
         "info",
       );
     },
@@ -508,13 +509,13 @@ export default function (pi: ExtensionAPI) {
 
       if (mode === "on") {
         if (strictMode) {
-          ctx.ui.notify("🛡️🔒 Strict Mode is already ACTIVE", "warning");
+          ctx.ui.notify("🛡️🔒 Strict Mode is already ACTIVE (default)", "warning");
         } else {
           strictMode = true;
           approveAllSession = false;
           aborted = false;
           ctx.ui.notify(
-            "🛡️🔒 Strict Mode ACTIVATED — ALL bash commands now require your approval\n" +
+            "🛡️🔒 Strict Mode ACTIVATED (default) — ALL bash commands now require your approval\n" +
             "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Whitelist / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",
@@ -523,13 +524,13 @@ export default function (pi: ExtensionAPI) {
         }
       } else if (mode === "off") {
         if (!strictMode && !aborted) {
-          ctx.ui.notify("🛡️ Strict Mode is already OFF", "warning");
+          ctx.ui.notify("🛡️ Strict Mode is already OFF (non-default)", "warning");
         } else {
           strictMode = false;
           approveAllSession = false;
           aborted = false;
           ctx.ui.notify(
-            "🛡️ Strict Mode DEACTIVATED — normal protection restored (patterns.yaml rules only)",
+            "🛡️ Strict Mode DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.",
             "info",
           );
         }
@@ -541,7 +542,7 @@ export default function (pi: ExtensionAPI) {
           approveAllSession = false;
           aborted = false;
           ctx.ui.notify(
-            "🛡️ Strict Mode DEACTIVATED — normal protection restored (patterns.yaml rules only)",
+            "🛡️ Strict Mode DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.",
             "info",
           );
         } else {
@@ -550,7 +551,7 @@ export default function (pi: ExtensionAPI) {
           approveAllSession = false;
           aborted = false;
           ctx.ui.notify(
-            "🛡️🔒 Strict Mode ACTIVATED — ALL bash commands now require your approval\n" +
+            "🛡️🔒 Strict Mode ACTIVATED (default) — ALL bash commands now require your approval\n" +
             "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Whitelist / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",

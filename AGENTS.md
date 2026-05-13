@@ -45,7 +45,7 @@ pi.on("tool_call") 3 handlers registered:
   3. Read handler       → checkFileAccess() → path-based block (zeroAccess only)
                          Reads allowed during abort for diagnostics
 
-pi.on("session_start") → shows "Defender vX.Y.Z active" notification
+pi.on("session_start") → shows "Defender vX.Y.Z active 🔒 Strict Mode ON" notification
 pi.on("session_shutdown") → clears cached config
 ```
 
@@ -84,7 +84,7 @@ Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
 2. ABORTED STATE → blocks all bash with 🛡️❌ message
    - Also blocks Write/Edit tools (separate handler checks aborted flag)
 
-3. STRICT MODE → whitelist check → approveAll check → strictModePrompt() selector:
+3. STRICT MODE (ON by default) → whitelist check → approveAll check → strictModePrompt() selector:
      ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Allow & Whitelist / ❌ Abort
    - Whitelist check runs first: if command matches strictModeWhiteList pattern → auto-approve
    - Whitelist save: generates regex from command, writes to .pi/patterns.yaml, reloads config
@@ -109,7 +109,7 @@ Both fall back to `ctx.ui.confirm()` if custom UI unavailable.
 | `/defender:status` | Shows stats + strict mode state |
 | `/defender:reload` | Clears cached config, reloads from YAML |
 | `/defender:patterns` | Copies bundled YAML to `.pi/defender/patterns.yaml` |
-| `/defender:strict [on\|off]` | Toggles strict mode, resets approveAll/aborted |
+| `/defender:strict [on\|off]` | Toggles strict mode (ON by default, resets approveAll/aborted) |
 
 ## When editing patterns
 

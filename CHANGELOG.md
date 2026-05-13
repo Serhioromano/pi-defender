@@ -2,7 +2,16 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [Unreleased]
+## [v1.2.6]
+
+### Changed
+- **Strict mode is now ON by default**. When Defender activates (session start or first tool call), strict mode is active immediately, requiring user approval for every bash command. Use `/defender:strict off` to disable.
+- All notification messages updated to reflect strict-mode-by-default: session start, reload, status command, and strict mode toggle messages now show "(default)" when active and "(non-default)" when off.
+- `/defender:status` now shows `🔒 ACTIVE (default)` when strict mode is on and `⚪ OFF (non-default)` when off.
+- `strictModePrompt()` selector now has 5 options (added "Allow & Whitelist")
+- Strict mode activation notification updated to mention the whitelist option
+- **Deny/Abort now truly stops execution**: When user selects "Deny" on a patterns.yaml block or "Abort" in strict mode, `ctx.abort()` is now called to cancel the agent's turn, preventing it from trying alternative approaches (different bash commands, Write/Edit bypasses, etc.). Previously only future bash commands were blocked, but the agent could still use Write/Edit/Read tools or try different bash commands in the same reasoning loop.
+- **Write/Edit blocked during abort state**: The Write/Edit tool handler now checks the `aborted` flag and blocks all file operations when execution is aborted. Previously the abort state only affected bash commands, allowing the agent to bypass via Write/Edit.
 
 ### Added
 - **Strict Mode Whitelist**: New 📋 "Allow & Whitelist" option in the strict mode selector. When selected, saves a regex pattern for the approved command to `.pi/patterns.yaml` under `strictModeWhiteList`. Future runs of the same command are auto-approved — no prompt needed.
@@ -15,12 +24,6 @@ All notable changes to Pi Defender will be documented in this file.
 - New `strictModeWhiteList` section in `patterns.yaml` — array of JS regex patterns
 - New functions in `config.ts`: `checkWhitelist()`, `generateWhitelistPattern()`, `addPatternToWhitelist()`
 - `/defender:status` now shows whitelist pattern count
-
-### Changed
-- `strictModePrompt()` selector now has 5 options (added "Allow & Whitelist")
-- Strict mode activation notification updated to mention the whitelist option
-- **Deny/Abort now truly stops execution**: When user selects "Deny" on a patterns.yaml block or "Abort" in strict mode, `ctx.abort()` is now called to cancel the agent's turn, preventing it from trying alternative approaches (different bash commands, Write/Edit bypasses, etc.). Previously only future bash commands were blocked, but the agent could still use Write/Edit/Read tools or try different bash commands in the same reasoning loop.
-- **Write/Edit blocked during abort state**: The Write/Edit tool handler now checks the `aborted` flag and blocks all file operations when execution is aborted. Previously the abort state only affected bash commands, allowing the agent to bypass via Write/Edit.
 
 ## [1.0.6]
 
