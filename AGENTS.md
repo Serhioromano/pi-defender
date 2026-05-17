@@ -130,6 +130,12 @@ sends `\x1b[13~` instead of legacy `\r`.
 
 Vim-style `k`/`j` navigation is kept as a fallback alongside `matchesKey(data, Key.up/down)`.
 
+**Theme saving**: Both prompts save `savedTheme = theme` in their `ctx.ui.custom()`
+callbacks. This is critical — `savedTheme` is used throughout the Bash handler for
+notification formatting. If either prompt runs without saving, `savedTheme` remains
+`null` and the handler crashes mid-loop on `savedTheme.fg()` calls, causing subsequent
+chain selectors to be skipped.
+
 ### Chained command processing
 
 When a bash command contains chain separators (`&&`, `||`, `;`), `splitChainCommands()` from `config.ts` breaks it into individual sub-commands. Each sub-command is then processed independently through `checkCommand()` + `patternBlockedPrompt()` + `strictModePrompt()`. All sub-commands must be approved for the full chain to execute.

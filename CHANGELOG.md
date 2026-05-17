@@ -7,6 +7,9 @@ All notable changes to Pi Defender will be documented in this file.
 ### Fixed
 - **Enter key not working in WSL with Kitty keyboard protocol**: The custom UI selectors (`patternBlockedPrompt` and `strictModePrompt`) checked for raw terminal byte sequences (`\r`/`\n` for Enter, `\x1b[A`/`\x1b[B` for arrows). When Kitty keyboard protocol is active (e.g. VS Code + WSL + Windows Terminal), Enter sends a CSI-u sequence like `\x1b[13~` instead of legacy `\r`, causing the selector to ignore the keystroke. Fixed by importing `matchesKey()` and `Key` from `@earendil-works/pi-tui` and using them for all keyboard matching — this handles both legacy and Kitty protocol sequences correctly.
 - Added `@earendil-works/pi-tui` as a direct dependency (was only transitive via `@earendil-works/pi-coding-agent`).
+- **Chain command: only first selector appeared**: After moving to per-sub-command approval (v1.2.7), a bug caused only the first sub-command's selector to show for chained bash commands — subsequent selectors never rendered, and the entire chain executed. Root cause: `savedTheme` was only set inside `patternBlockedPrompt`'s custom UI callback, leaving it `null` when `strictModePrompt` ran. The `savedTheme.fg()` calls in notification strings then threw `TypeError`, crashing the for-loop mid-iteration. Pi caught the error (handler didn't return `{ block: true }`) and allowed the full chain. Fixed by saving `savedTheme = theme` in BOTH prompt callbacks.
+- Inter-prompt delay restored to 150ms (was accidentally at 10ms).
+- `strictModePrompt` separator/header colors restored to "accent" (were accidentally changed to "warning").
 
 ## [v1.2.7]
 

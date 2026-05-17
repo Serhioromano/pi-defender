@@ -175,6 +175,7 @@ export default function (pi: ExtensionAPI) {
       try {
         const result = await ctx.ui.custom(
           (_tui: any, theme: any, _kb: any, done: (value: string) => void) => {
+            savedTheme = theme;
             let selectedIndex = 0;
             const options = [
               { value: "approve", label: "✅ Approve this command" },
@@ -188,11 +189,11 @@ export default function (pi: ExtensionAPI) {
               const lines: string[] = [];
               const sep = "─".repeat(Math.min(width, 80));
               const stepTag = stepInfo ? ` ${stepInfo}` : "";
-              lines.push(theme.fg("warning", sep));
-              lines.push(theme.fg("warning", theme.bold(` 🛡️🔒 Strict Mode — Bash Command${stepTag}`)));
-              lines.push(`  ${theme.fg("dim","Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("dim", "to turn Strict Mode off and stop these prompts to popup.")}`);
+              lines.push(theme.fg("accent", sep));
+              lines.push(theme.fg("accent", theme.bold(` 🛡️🔒 Strict Mode — Bash Command${stepTag}`)));
+              lines.push(`  ${theme.fg("muted","Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("muted", "to turn Strict Mode off and stop these prompts to popup.")}`);
               lines.push("");
-              lines.push(theme.fg("warning", theme.bold(" Command:")));
+              lines.push(theme.fg("accent", theme.bold(" Command:")));
               for (const cmdLine of cmdLines) {
                 lines.push(theme.fg("accent", `  ${cmdLine}`));
               }
@@ -303,7 +304,7 @@ export default function (pi: ExtensionAPI) {
 
       // Small delay between selectors — gives TUI time to tear down previous one
       if (idx > 0) {
-        await delay(10);
+        await delay(150);
       }
 
       const result = checkCommand(subCmd, config);
