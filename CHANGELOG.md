@@ -16,6 +16,7 @@ All notable changes to Pi Defender will be documented in this file.
 
 ### Fixed
 - Fixed a bug where plain "Approve" on a sub-command would appear to skip subsequent sub-command selectors due to a TUI race condition (the `ctx.ui.custom()` teardown from the first selector conflicted with the second). The 150ms inter-prompt delay resolves this.
+- **Whitelist notifications now batched**: When multiple sub-commands in a chain are all whitelisted, a single combined notification shows all N commands instead of individual `ctx.ui.notify()` calls that would overwrite each other (only the last one was visible).
 
 ### Added
 - **Command display improvements** in both strict mode and patterns.yaml prompts:

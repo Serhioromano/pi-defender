@@ -293,6 +293,7 @@ export default function (pi: ExtensionAPI) {
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     // Process each sub-command through the full approval pipeline independently
+    const whitelistedCmds: { cmd: string; pattern: string }[] = [];
     for (let idx = 0; idx < subCommands.length; idx++) {
       const subCmd = subCommands[idx];
       const stepInfo = subCommands.length > 1 ? `(${idx + 1}/${subCommands.length})` : undefined;
@@ -352,20 +353,14 @@ export default function (pi: ExtensionAPI) {
         const whitelistCheck = checkWhitelist(subCmd, config);
         if (whitelistCheck.matched) {
           stats.strictApproved++;
-          ctx.ui.notify(
-            `🛡️🔒 Strict Mode: whitelisted ✅ — pattern: ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
-            "info",
-          );
+          whitelistedCmds.push({ cmd: subCmd, pattern: whitelistCheck.pattern });
           continue;
         }
 
         // approveAllSession auto-approves commands not blocked by patterns.yaml
         if (approveAllSession) {
           stats.strictApproved++;
-          ctx.ui.notify(
-            `🛡️🔒 Strict Mode: auto-approved (approve-all active) — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
-            "info",
-          );
+          whitelistedCmds.push({ cmd: subCmd, pattern: "approve-all-session" });
           continue;
         }
 
@@ -437,6 +432,21 @@ export default function (pi: ExtensionAPI) {
           "info",
         );
       }
+    }
+
+    // All sub-commands approved — show combined whitelist notification if any
+    if (whitelistedCmds.length === 1) {
+      const w = whitelistedCmds[0];
+      ctx.ui.notify(
+        `🛡️🔒 Strict Mode: whitelisted ✅ — pattern: \`${w.pattern}\` — ${w.cmd.length > 60 ? w.cmd.slice(0, 57) + "..." : w.cmd}`,
+        "info",
+      );
+    } else if (whitelistedCmds.length > 0) {
+      const lines = whitelistedCmds.map(w => `  ${w.cmd}`).join("\n");
+      ctx.ui.notify(
+        `🛡️🔒 Strict Mode: whitelisted ✅ — ${whitelistedCmds.length} commands:\n${lines}`,
+        "info",
+      );
     }
 
     // All sub-commands approved — allow the full chained command to run

@@ -125,6 +125,15 @@ When a bash command contains chain separators (`&&`, `||`, `;`), `splitChainComm
 
 A **150ms delay** runs between sub-command selectors to prevent TUI race conditions — without it, the second `ctx.ui.custom()` call may conflict with the first selector's teardown and never render.
 
+**Whitelist batching**: Auto-approved sub-commands (whitelist match or approveAll) are collected during the loop and shown as a single combined notification after all sub-commands pass. This prevents `ctx.ui.notify()` calls from overwriting each other — for a 3-command chain all whitelisted, the notification reads:
+
+```
+🛡️🔒 Strict Mode: whitelisted ✅ — 3 commands:
+  mkdir -p test2
+  touch ./test2/text.md
+  ls -la ./test2
+```
+
 ## Commands
 
 | Command | Handler |
