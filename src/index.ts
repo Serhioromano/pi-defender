@@ -185,11 +185,11 @@ export default function (pi: ExtensionAPI) {
               const lines: string[] = [];
               const sep = "─".repeat(Math.min(width, 80));
               const stepTag = stepInfo ? ` ${stepInfo}` : "";
-              lines.push(theme.fg("accent", sep));
-              lines.push(theme.fg("accent", theme.bold(` 🛡️🔒 Strict Mode — Bash Command${stepTag}`)));
-              lines.push(`  ${theme.fg("muted","Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("muted", "to turn Strict Mode off and stop these prompts to popup.")}`);
+              lines.push(theme.fg("warning", sep));
+              lines.push(theme.fg("warning", theme.bold(` 🛡️🔒 Strict Mode — Bash Command${stepTag}`)));
+              lines.push(`  ${theme.fg("dim","Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("dim", "to turn Strict Mode off and stop these prompts to popup.")}`);
               lines.push("");
-              lines.push(theme.fg("accent", theme.bold(" Command:")));
+              lines.push(theme.fg("warning", theme.bold(" Command:")));
               for (const cmdLine of cmdLines) {
                 lines.push(theme.fg("accent", `  ${cmdLine}`));
               }
@@ -287,10 +287,20 @@ export default function (pi: ExtensionAPI) {
     // Split chained commands (&&, ||, ;) — each sub-command gets individual approval
     const subCommands = splitChainCommands(command);
 
+    // Helper: small delay between sub-command prompts for TUI stability.
+    // Without this, the second ctx.ui.custom() may conflict with the first's
+    // teardown, causing the second selector to never render.
+    const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
     // Process each sub-command through the full approval pipeline independently
     for (let idx = 0; idx < subCommands.length; idx++) {
       const subCmd = subCommands[idx];
       const stepInfo = subCommands.length > 1 ? `(${idx + 1}/${subCommands.length})` : undefined;
+
+      // Small delay between selectors — gives TUI time to tear down previous one
+      if (idx > 0) {
+        await delay(10);
+      }
 
       const result = checkCommand(subCmd, config);
 
@@ -343,7 +353,7 @@ export default function (pi: ExtensionAPI) {
         if (whitelistCheck.matched) {
           stats.strictApproved++;
           ctx.ui.notify(
-            `🛡️🔒 Strict Mode: whitelisted ✅ — pattern: \`${whitelistCheck.pattern}\` — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
+            `🛡️🔒 Strict Mode: whitelisted ✅ — pattern: ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
             "info",
           );
           continue;
@@ -426,7 +436,6 @@ export default function (pi: ExtensionAPI) {
           `🛡️🔒 Strict Mode: approved — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
           "info",
         );
-        continue;
       }
     }
 

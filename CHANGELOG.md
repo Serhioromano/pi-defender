@@ -8,17 +8,21 @@ All notable changes to Pi Defender will be documented in this file.
 - **Chained commands are now approved per sub-command**: Commands joined with `&&`, `||`, or `;` are split into individual sub-commands and each goes through the full approval pipeline independently. Previously the full chain was displayed as numbered steps in a single selector — now each sub-command gets its own selector with a `(1/N)` step indicator.
   - If any sub-command is denied or aborted, the entire chain is blocked
   - Whitelist saves apply to individual sub-commands (not the full chain)
-  - `patternBlockedPrompt` is called separately for each sub-command
-  - `strictModePrompt` is called separately for each sub-command
+  - `patternBlockedPrompt()` is called separately for each sub-command
+  - `strictModePrompt()` is called separately for each sub-command
   - `checkCommand()` runs per sub-command for pattern matching accuracy
 - Both `patternBlockedPrompt()` and `strictModePrompt()` now accept an optional `stepInfo` parameter (e.g. `(2/3)`) shown in the title bar
+- 150ms delay between sub-command prompts to prevent TUI race conditions when showing back-to-back selectors
+
+### Fixed
+- Fixed a bug where plain "Approve" on a sub-command would appear to skip subsequent sub-command selectors due to a TUI race condition (the `ctx.ui.custom()` teardown from the first selector conflicted with the second). The 150ms inter-prompt delay resolves this.
 
 ### Added
 - **Command display improvements** in both strict mode and patterns.yaml prompts:
-  - Clear **`Command:`** label above the command text so users know exactly what they're confirming
-  - Command text now uses **`theme.fg("accent", ...)`** (accent/bold color) instead of `theme.fg("dim", ...)` — stands out prominently from the rest of the UI
+  - Clear **`Command:`** label above the command text
+  - Command text now uses **`theme.fg("accent", ...)`** (accent/bold color) instead of `theme.fg("dim", ...)`
   - Same improvements applied to fallback `ctx.ui.confirm()` dialogs
-- `splitChainCommands()` imported and used in `index.ts` (was already in `config.ts`)
+- `splitChainCommands()` imported and used in `index.ts`
 - `formatCommandForDisplay()` helper for command truncation in prompts
 
 ## [v1.2.6]
