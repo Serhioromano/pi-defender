@@ -7,5 +7,6 @@
         "latex",
         "plaintext",
         "typescript"
-    ]
+    ],
+    "terminal.integrated.sendKeybindingsToShell": false
 }

@@ -191,23 +191,52 @@ You'll see: 🛡️🔒 Strict Mode ACTIVATED (default) — ALL bash commands no
 
 ### Workflow
 
-When the agent tries to run a bash command, a selector appears:
+When the agent tries to run a bash command, a selector appears with the command clearly displayed. **Chained commands** (using `&&`, `||`, `;`) are split and each sub-command is approved individually — you see exactly which command you're approving.
 
+**Single command:**
 ```
 ────────────────────────────────────────────────
  🛡️🔒 Strict Mode — Bash Command
 
+  Run  /defender:strict off  to turn Strict Mode off and stop these prompts
+
+ Command:
   ls -la /some/path
 
  ▶ ✅ Approve this command
-   ⚠️ Deny (try something else)
-   ⭐ Approve ALL session (skip future prompts for safe commands)
    📋 Allow & Whitelist (remember for future)
+   ⭐ Approve ALL session (skip future prompts for safe commands)
+   ⚠️ Deny (try something else)
    ❌ Abort (stop all execution)
 
  ↑↓ navigate · enter select · esc deny
 ────────────────────────────────────────────────
 ```
+
+**Chained command (e.g. `git add . && git commit -m "msg"`)** — *two separate selectors appear, one per sub-command.* First for `git add .`:
+```
+ 🛡️🔒 Strict Mode — Bash Command (1/2)
+
+ Command:
+  git add .
+
+ ▶ ✅ Approve this command
+   ...
+ ──────────────────────────────────────────────
+```
+Then for `git commit -m "fix: resolve path issue"`:
+```
+ 🛡️🔒 Strict Mode — Bash Command (2/2)
+
+ Command:
+  git commit -m "fix: resolve path issue"
+
+ ▶ ✅ Approve this command
+   ...
+ ──────────────────────────────────────────────
+```
+
+Each selector shows only the sub-command being approved — with an accent-colored **`Command:`** label and a step indicator like `(1/2)`. If you deny or abort any sub-command, the entire chain is blocked.
 
 ### Approve All Session
 

@@ -23,7 +23,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
-import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, type Config } from "./config";
+import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, type Config } from "./config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -70,8 +70,16 @@ export default function (pi: ExtensionAPI) {
   // PATTERN-BLOCKED SELECTOR (patterns.yaml violations)
   // ===========================================================================
 
-  async function patternBlockedPrompt(ctx: any, command: string, reason: string): Promise<"allow" | "deny"> {
-    const displayCmd = command.length > 80 ? command.slice(0, 77) + "..." : command;
+  /**
+   * Format a single command for display — truncates if too long.
+   */
+  function formatCommandForDisplay(command: string, maxChars: number = 300): string[] {
+    const text = command.length > maxChars ? command.slice(0, maxChars - 3) + "..." : command;
+    return [text];
+  }
+
+  async function patternBlockedPrompt(ctx: any, command: string, reason: string, stepInfo?: string): Promise<"allow" | "deny"> {
+    const cmdLines = formatCommandForDisplay(command);
     const displayReason = reason.length > 100 ? reason.slice(0, 97) + "..." : reason;
 
     if (typeof ctx.ui?.custom === "function") {
@@ -87,10 +95,14 @@ export default function (pi: ExtensionAPI) {
             function render(width: number): string[] {
               const lines: string[] = [];
               const sep = "─".repeat(Math.min(width, 80));
+              const stepTag = stepInfo ? ` ${stepInfo}` : "";
               lines.push(theme.fg("warning", sep));
-              lines.push(theme.fg("warning", theme.bold(" 🛡️ BLOCKED by patterns.yaml")));
+              lines.push(theme.fg("warning", theme.bold(` 🛡️ BLOCKED by patterns.yaml${stepTag}`)));
               lines.push("");
-              lines.push(theme.fg("dim", `  ${displayCmd}`));
+              lines.push(theme.fg("warning", theme.bold(" Command:")));
+              for (const cmdLine of cmdLines) {
+                lines.push(theme.fg("accent", `  ${cmdLine}`));
+              }
               lines.push("");
               lines.push(theme.fg("warning", `  Reason: ${displayReason}`));
               lines.push("");
@@ -135,9 +147,11 @@ export default function (pi: ExtensionAPI) {
 
     // Fallback: confirm dialog
     if (typeof ctx.ui?.confirm === "function") {
+      const cmdPreview = cmdLines.join("\n");
+      const title = stepInfo ? `🛡️ BLOCKED by patterns.yaml ${stepInfo}` : "🛡️ BLOCKED by patterns.yaml";
       const allowed = await ctx.ui.confirm(
-        "🛡️ BLOCKED by patterns.yaml",
-        `${displayCmd}\n\nReason: ${displayReason}\n\nAllow this dangerous command anyway?\n(No = deny & abort entire prompt)`,
+        title,
+        `${cmdPreview}\n\nReason: ${displayReason}\n\nAllow this dangerous command anyway?\n(No = deny & abort entire prompt)`,
       );
       return allowed ? "allow" : "deny";
     }
@@ -150,8 +164,8 @@ export default function (pi: ExtensionAPI) {
   // STRICT MODE SELECTOR
   // ===========================================================================
 
-  async function strictModePrompt(ctx: any, command: string): Promise<"approve" | "deny" | "approve_all" | "abort" | "whitelist"> {
-    const displayCmd = command.length > 80 ? command.slice(0, 77) + "..." : command;
+  async function strictModePrompt(ctx: any, command: string, stepInfo?: string): Promise<"approve" | "deny" | "approve_all" | "abort" | "whitelist"> {
+    const cmdLines = formatCommandForDisplay(command);
 
     // Try custom UI selector first
     if (typeof ctx.ui?.custom === "function") {
@@ -170,11 +184,15 @@ export default function (pi: ExtensionAPI) {
             function render(width: number): string[] {
               const lines: string[] = [];
               const sep = "─".repeat(Math.min(width, 80));
+              const stepTag = stepInfo ? ` ${stepInfo}` : "";
               lines.push(theme.fg("accent", sep));
-              lines.push(theme.fg("accent", theme.bold(" 🛡️🔒 Strict Mode — Bash Command")));
+              lines.push(theme.fg("accent", theme.bold(` 🛡️🔒 Strict Mode — Bash Command${stepTag}`)));
               lines.push(`  ${theme.fg("muted","Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("muted", "to turn Strict Mode off and stop these prompts to popup.")}`);
               lines.push("");
-              lines.push(theme.fg("dim", `  ${displayCmd}`));
+              lines.push(theme.fg("accent", theme.bold(" Command:")));
+              for (const cmdLine of cmdLines) {
+                lines.push(theme.fg("accent", `  ${cmdLine}`));
+              }
               lines.push("");
               for (let i = 0; i < options.length; i++) {
                 const isSelected = i === selectedIndex;
@@ -217,9 +235,11 @@ export default function (pi: ExtensionAPI) {
 
     // Fallback: two-step confirm dialog
     if (typeof ctx.ui?.confirm === "function") {
+      const cmdPreview = cmdLines.join("\n");
+      const title = stepInfo ? `🛡️🔒 Strict Mode — Bash Command ${stepInfo}` : "🛡️🔒 Strict Mode — Bash Command";
       const choice = await ctx.ui.confirm(
-        "🛡️🔒 Strict Mode — Bash Command",
-        `${displayCmd}\n\nAllow this command?\n\n(No = deny, Esc = abort via /defender:strict off)`,
+        title,
+        `Command:\n${cmdPreview}\n\nAllow this command?\n\n(No = deny, Esc = abort via /defender:strict off)`,
       );
       if (!choice) return "deny";
 
@@ -263,148 +283,154 @@ export default function (pi: ExtensionAPI) {
     if (!command) return undefined;
 
     const config = getConfig(ctx.cwd);
-    const result = checkCommand(command, config);
 
-    // 1. PATTERNS.YAML BLOCKED — prompt user (allow or deny & abort)
-    if (result.blocked) {
-      stats.blocked++;
+    // Split chained commands (&&, ||, ;) — each sub-command gets individual approval
+    const subCommands = splitChainCommands(command);
 
-      // No UI — block
-      if (!ctx.hasUI) {
-        ctx.ui.notify(`🛡️ BLOCKED by patterns.yaml: ${result.reason}`, "error");
-        return { block: true, reason: `Blocked by patterns.yaml: ${result.reason}` };
+    // Process each sub-command through the full approval pipeline independently
+    for (let idx = 0; idx < subCommands.length; idx++) {
+      const subCmd = subCommands[idx];
+      const stepInfo = subCommands.length > 1 ? `(${idx + 1}/${subCommands.length})` : undefined;
+
+      const result = checkCommand(subCmd, config);
+
+      // ----- 1. PATTERNS.YAML BLOCKED (per sub-command) -----
+      if (result.blocked) {
+        stats.blocked++;
+
+        if (!ctx.hasUI) {
+          ctx.ui.notify(`🛡️ BLOCKED by patterns.yaml: ${result.reason}`, "error");
+          return { block: true, reason: `Blocked by patterns.yaml: ${result.reason}` };
+        }
+
+        const choice = await patternBlockedPrompt(ctx, subCmd, result.reason, stepInfo);
+
+        if (choice === "deny") {
+          aborted = true;
+          stats.strictBlocked++;
+          ctx.ui.notify(
+            `🛡️❌ Denied & Aborted — patterns.yaml: ${result.reason}. Use /defender:strict off to reset.`,
+            "error",
+          );
+          ctx.abort?.();
+          return { block: true, reason: `Denied by user (patterns.yaml: ${result.reason}) — execution aborted` };
+        }
+
+        // User allowed this dangerous sub-command — skip strict mode for it, continue to next
+        ctx.ui.notify(
+          `⚠️ Allowed by user (patterns.yaml: ${result.reason}) — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
+          "warning",
+        );
+        stats.allowed++;
+        continue;
       }
 
-      // Show selector: Allow / Deny & Abort
-      const choice = await patternBlockedPrompt(ctx, command, result.reason);
-
-      if (choice === "deny") {
-        aborted = true;
+      // ----- 2. ABORTED STATE -----
+      if (aborted) {
         stats.strictBlocked++;
         ctx.ui.notify(
-          `🛡️❌ Denied & Aborted — patterns.yaml: ${result.reason}. Use /defender:strict off to reset.`,
+          `🛡️❌ Execution ABORTED by user — all bash commands blocked. Use /defender:strict off to reset.`,
           "error",
         );
-        // Cancel the agent's turn to prevent it from trying alternative approaches
-        ctx.abort?.();
-        return { block: true, reason: `Denied by user (patterns.yaml: ${result.reason}) — execution aborted` };
-      }
-
-      // User allowed the dangerous command
-      ctx.ui.notify(
-        `⚠️ Allowed by user (patterns.yaml: ${result.reason}) — ${command.length > 60 ? command.slice(0, 57) + "..." : command}`,
-        "warning",
-      );
-      stats.allowed++;
-      return undefined;
-    }
-
-    // 2. ABORTED STATE — block all bash after user aborted
-    if (aborted) {
-      stats.strictBlocked++;
-      ctx.ui.notify(
-        `🛡️❌ Execution ABORTED by user — all bash commands blocked. Use /defender:strict off to reset.`,
-        "error",
-      );
-      ctx.abort?.();
-      return { block: true, reason: "Execution aborted by user — use /defender:strict off to reset" };
-    }
-
-    // 3. STRICT MODE — block all bash unless approved
-    if (strictMode) {
-      // Check whitelist first — auto-approve if command matches a whitelisted pattern
-      const whitelistCheck = checkWhitelist(command, config);
-      if (whitelistCheck.matched) {
-        stats.strictApproved++;
-        ctx.ui.notify(
-          `🛡️🔒 Strict Mode: whitelisted ✅ — pattern: \`${whitelistCheck.pattern}\` — ${command.length > 60 ? command.slice(0, 57) + "..." : command}`,
-          "info",
-        );
-        return undefined;
-      }
-
-      // approveAllSession auto-approves commands not blocked by patterns.yaml
-      if (approveAllSession) {
-        stats.strictApproved++;
-        ctx.ui.notify(
-          `🛡️🔒 Strict Mode: auto-approved (approve-all active) — ${command.length > 60 ? command.slice(0, 57) + "..." : command}`,
-          "info",
-        );
-        return undefined;
-      }
-
-      // No UI — block
-      if (!ctx.hasUI) {
-        stats.strictBlocked++;
-        ctx.ui.notify(`🛡️🔒 Strict Mode: blocked (no UI) — use /defender:strict off to disable`, "error");
-        return { block: true, reason: "Strict mode active — all bash commands require approval (no UI available)" };
-      }
-
-      // Show selector
-      const choice = await strictModePrompt(ctx, command);
-
-      if (choice === "deny") {
-        stats.strictBlocked++;
-        ctx.ui.notify(`🛡️🔒 Strict Mode: denied — try something else`, "warning");
-        return { block: true, reason: "Blocked by user in strict mode — try a different approach" };
-      }
-
-      if (choice === "abort") {
-        aborted = true;
-        stats.strictBlocked++;
-        ctx.ui.notify(
-          `🛡️❌ Execution ABORTED by user — all bash commands now blocked. Use /defender:strict off to reset.`,
-          "error",
-        );
-        // Cancel the agent's turn to prevent it from trying alternative approaches
         ctx.abort?.();
         return { block: true, reason: "Execution aborted by user — use /defender:strict off to reset" };
       }
 
-      if (choice === "whitelist") {
-        // Split chained commands and generate a regex pattern for EACH sub-command
-        const whitelistPatterns = generateWhitelistPatterns(command);
-        const result = addPatternsToWhitelist(ctx.cwd, whitelistPatterns);
-
-        // Reload config to pick up new whitelist entries
-        currentConfig = null;
-
-        if (result.added > 0) {
-          const patternList = whitelistPatterns.map(p => `\`${p}\``).join(", ");
-          const skippedNote = result.skipped > 0 ? ` (${result.skipped} already existed)` : "";
+      // ----- 3. STRICT MODE (per sub-command) -----
+      if (strictMode) {
+        // Check whitelist for this individual sub-command
+        const whitelistCheck = checkWhitelist(subCmd, config);
+        if (whitelistCheck.matched) {
           stats.strictApproved++;
           ctx.ui.notify(
-            `🛡️🔒 Strict Mode: whitelisted 📋 — ${result.added} pattern(s)${skippedNote} saved to .pi/patterns.yaml: ${patternList}`,
+            `🛡️🔒 Strict Mode: whitelisted ✅ — pattern: \`${whitelistCheck.pattern}\` — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
+            "info",
+          );
+          continue;
+        }
+
+        // approveAllSession auto-approves commands not blocked by patterns.yaml
+        if (approveAllSession) {
+          stats.strictApproved++;
+          ctx.ui.notify(
+            `🛡️🔒 Strict Mode: auto-approved (approve-all active) — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
+            "info",
+          );
+          continue;
+        }
+
+        if (!ctx.hasUI) {
+          stats.strictBlocked++;
+          ctx.ui.notify(`🛡️🔒 Strict Mode: blocked (no UI) — use /defender:strict off to disable`, "error");
+          return { block: true, reason: "Strict mode active — all bash commands require approval (no UI available)" };
+        }
+
+        // Show selector for this individual sub-command
+        const choice = await strictModePrompt(ctx, subCmd, stepInfo);
+
+        if (choice === "deny") {
+          stats.strictBlocked++;
+          ctx.ui.notify(`🛡️🔒 Strict Mode: denied — try something else`, "warning");
+          return { block: true, reason: "Blocked by user in strict mode — try a different approach" };
+        }
+
+        if (choice === "abort") {
+          aborted = true;
+          stats.strictBlocked++;
+          ctx.ui.notify(
+            `🛡️❌ Execution ABORTED by user — all bash commands now blocked. Use /defender:strict off to reset.`,
+            "error",
+          );
+          ctx.abort?.();
+          return { block: true, reason: "Execution aborted by user — use /defender:strict off to reset" };
+        }
+
+        if (choice === "whitelist") {
+          // Generate a regex pattern for this individual sub-command
+          const whitelistPatterns = generateWhitelistPatterns(subCmd);
+          const addResult = addPatternsToWhitelist(ctx.cwd, whitelistPatterns);
+
+          // Reload config to pick up new whitelist entries
+          currentConfig = null;
+
+          if (addResult.added > 0) {
+            const patternList = whitelistPatterns.map(p => `\`${p}\``).join(", ");
+            const skippedNote = addResult.skipped > 0 ? ` (${addResult.skipped} already existed)` : "";
+            stats.strictApproved++;
+            ctx.ui.notify(
+              `🛡️🔒 Strict Mode: whitelisted 📋 — ${addResult.added} pattern(s)${skippedNote} saved to .pi/patterns.yaml: ${patternList}`,
+              "info",
+            );
+          } else {
+            stats.strictApproved++;
+            ctx.ui.notify(
+              `🛡️🔒 Strict Mode: approved (whitelist save: ${addResult.reason}) — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
+              "warning",
+            );
+          }
+          continue;
+        }
+
+        if (choice === "approve_all") {
+          approveAllSession = true;
+          stats.strictApprovedAll++;
+          ctx.ui.notify(
+            `🛡️🔒 Strict Mode: ⭐ Approve All Session activated — future bash commands auto-approved (patterns.yaml rules still enforced)`,
             "info",
           );
         } else {
           stats.strictApproved++;
-          ctx.ui.notify(
-            `🛡️🔒 Strict Mode: approved (whitelist save: ${result.reason}) — ${command.length > 60 ? command.slice(0, 57) + "..." : command}`,
-            "warning",
-          );
         }
-        return undefined;
-      }
 
-      if (choice === "approve_all") {
-        approveAllSession = true;
-        stats.strictApprovedAll++;
         ctx.ui.notify(
-          `🛡️🔒 Strict Mode: ⭐ Approve All Session activated — future bash commands auto-approved (patterns.yaml rules still enforced)`,
+          `🛡️🔒 Strict Mode: approved — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
           "info",
         );
-      } else {
-        stats.strictApproved++;
+        continue;
       }
-
-      ctx.ui.notify(
-        `🛡️🔒 Strict Mode: approved — ${command.length > 60 ? command.slice(0, 57) + "..." : command}`,
-        "info",
-      );
-      return undefined;
     }
 
+    // All sub-commands approved — allow the full chained command to run
     return undefined;
   });
 

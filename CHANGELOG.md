@@ -2,6 +2,25 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [v1.2.7]
+
+### Changed
+- **Chained commands are now approved per sub-command**: Commands joined with `&&`, `||`, or `;` are split into individual sub-commands and each goes through the full approval pipeline independently. Previously the full chain was displayed as numbered steps in a single selector — now each sub-command gets its own selector with a `(1/N)` step indicator.
+  - If any sub-command is denied or aborted, the entire chain is blocked
+  - Whitelist saves apply to individual sub-commands (not the full chain)
+  - `patternBlockedPrompt` is called separately for each sub-command
+  - `strictModePrompt` is called separately for each sub-command
+  - `checkCommand()` runs per sub-command for pattern matching accuracy
+- Both `patternBlockedPrompt()` and `strictModePrompt()` now accept an optional `stepInfo` parameter (e.g. `(2/3)`) shown in the title bar
+
+### Added
+- **Command display improvements** in both strict mode and patterns.yaml prompts:
+  - Clear **`Command:`** label above the command text so users know exactly what they're confirming
+  - Command text now uses **`theme.fg("accent", ...)`** (accent/bold color) instead of `theme.fg("dim", ...)` — stands out prominently from the rest of the UI
+  - Same improvements applied to fallback `ctx.ui.confirm()` dialogs
+- `splitChainCommands()` imported and used in `index.ts` (was already in `config.ts`)
+- `formatCommandForDisplay()` helper for command truncation in prompts
+
 ## [v1.2.6]
 
 ### Changed

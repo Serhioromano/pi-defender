@@ -38,4 +38,4 @@ publish:
 
 test:
 	@echo "Running tests..."
-	pi -e src/index.ts
+	cd /tmp && pi -e ~/www/pi-defender/src/index.ts --no-extensions

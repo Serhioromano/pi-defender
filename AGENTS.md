@@ -76,31 +76,52 @@ Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
 
 ### Bash handler tiers (index.ts)
 
+Chained commands (`&&`, `||`, `;`) are split via `splitChainCommands()` and each
+sub-command is processed individually through the full pipeline:
+
 ```
-1. patterns.yaml BLOCKED → patternBlockedPrompt() selector: ⚠️ Allow / ❌ Deny & Abort
-   - Allow → returns undefined (command runs), skips remaining tiers
+for each subCmd in chain:
+
+1. patterns.yaml BLOCKED → patternBlockedPrompt(ctx, subCmd, reason, stepInfo)
+     selector: ⚠️ Allow / ❌ Deny & Abort
+   - Allow → skip strict mode for THIS sub-command, continue to next
    - Deny → calls ctx.abort() to cancel agent's turn + sets aborted=true
 
 2. ABORTED STATE → blocks all bash with 🛡️❌ message
    - Also blocks Write/Edit tools (separate handler checks aborted flag)
 
-3. STRICT MODE (ON by default) → whitelist check → approveAll check → strictModePrompt() selector:
-     ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Allow & Whitelist / ❌ Abort
-   - Whitelist check runs first: if command matches strictModeWhiteList pattern → auto-approve
-   - Whitelist save: generates regex from command, writes to .pi/patterns.yaml, reloads config
+3. STRICT MODE (ON by default) → whitelist check → approveAll check → strictModePrompt()
+     selector: ✅ Approve / 📋 Whitelist / ⭐ Approve All / ⚠️ Deny / ❌ Abort
+   - Whitelist check runs first: if subCmd matches strictModeWhiteList pattern → auto-approve
+   - Whitelist save: generates regex from subCmd, writes to .pi/patterns.yaml, reloads config
    - approveAllSession flag auto-approves safe commands
    - Abort → calls ctx.abort() + sets aborted=true
+   - Deny or Abort on ANY sub-command → full chain blocked
 
-4. NORMAL MODE → existing ask/allow behavior
+4. NORMAL MODE → passes through (no UI)
+
+// All sub-commands approved → allow the full chained command to run
 ```
+
+### Command display format
+
+Both prompts use `formatCommandForDisplay(command)` (`src/index.ts`) to render the command:
+- Single command text with truncation at 300 chars
+- The command text uses **`theme.fg("accent", ...)`** (accent/bold color) to stand out
+- A clear **`Command:`** label (also in accent/bold) is shown above the command text
+- When approving a sub-command from a chain, a **step indicator** like `(2/3)` appears in the title bar
 
 ### Selector UI
 
 Two custom UI prompts using `ctx.ui.custom()`:
-- **patternBlockedPrompt**: 2 options, yellow/warning theme, shows pattern reason
-- **strictModePrompt**: 5 options, accent theme, shows command preview
+- **patternBlockedPrompt(ctx, command, reason, stepInfo?)**: 2 options, yellow/warning theme, shows pattern reason + command in accent
+- **strictModePrompt(ctx, command, stepInfo?)**: 5 options, accent theme, shows step info for chain context
 
 Both fall back to `ctx.ui.confirm()` if custom UI unavailable.
+
+### Chained command processing
+
+When a bash command contains chain separators (`&&`, `||`, `;`), `splitChainCommands()` from `config.ts` breaks it into individual sub-commands. Each sub-command is then processed independently through `checkCommand()` + `patternBlockedPrompt()` + `strictModePrompt()`. All sub-commands must be approved for the full chain to execute.
 
 ## Commands
 
