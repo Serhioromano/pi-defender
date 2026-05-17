@@ -30,7 +30,7 @@ publish:
 	@git pull --rebase origin master
 	@git push origin master
 	@newver=$$(npm version $(v) 2>&1 | tail -1); \
-	echo "🏷️  Version bumped: $$newver"
+		echo "🏷️  Version bumped: $$newver"
 	git push origin master --follow-tags
 	@echo "🚀 Pushed to GitHub"
 	npm publish

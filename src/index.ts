@@ -23,7 +23,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
-import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPattern, addPatternToWhitelist, type Config } from "./config";
+import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, type Config } from "./config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -362,16 +362,19 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (choice === "whitelist") {
-        // Generate a regex pattern from the command and save to .pi/patterns.yaml
-        const whitelistPattern = generateWhitelistPattern(command);
-        const result = addPatternToWhitelist(ctx.cwd, whitelistPattern);
+        // Split chained commands and generate a regex pattern for EACH sub-command
+        const whitelistPatterns = generateWhitelistPatterns(command);
+        const result = addPatternsToWhitelist(ctx.cwd, whitelistPatterns);
 
-        if (result.added) {
-          // Reload config to pick up the new whitelist entry
-          currentConfig = null;
+        // Reload config to pick up new whitelist entries
+        currentConfig = null;
+
+        if (result.added > 0) {
+          const patternList = whitelistPatterns.map(p => `\`${p}\``).join(", ");
+          const skippedNote = result.skipped > 0 ? ` (${result.skipped} already existed)` : "";
           stats.strictApproved++;
           ctx.ui.notify(
-            `🛡️🔒 Strict Mode: whitelisted 📋 — pattern \`${whitelistPattern}\` saved to .pi/patterns.yaml`,
+            `🛡️🔒 Strict Mode: whitelisted 📋 — ${result.added} pattern(s)${skippedNote} saved to .pi/patterns.yaml: ${patternList}`,
             "info",
           );
         } else {

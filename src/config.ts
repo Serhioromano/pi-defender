@@ -344,25 +344,77 @@ export function checkCommand(command: string, config: Config): CheckResult {
 }
 
 // =============================================================================
+// CHAIN COMMAND SPLITTING
+// =============================================================================
+
+const CHAIN_SEPARATOR = /\s*(?:&&|\|\||;)\s*/;
+
+/**
+ * Split a bash command string into individual commands by chain separators.
+ * Recognized separators: &&, ||, ;
+ * Pipes (|) are NOT treated as chain separators — they form a single pipeline.
+ *
+ * Examples:
+ *   "git add . && git commit -m 'msg'" → ["git add .", "git commit -m 'msg'"]
+ *   "cd /tmp; rm -rf *"              → ["cd /tmp", "rm -rf *"]
+ *   "ls -la"                          → ["ls -la"]
+ */
+export function splitChainCommands(command: string): string[] {
+  return command.split(CHAIN_SEPARATOR).map(c => c.trim()).filter(c => c.length > 0);
+}
+
+// =============================================================================
 // WHITELIST CHECKING — strict mode auto-approve
 // =============================================================================
 
+/**
+ * Check if ALL sub-commands in a (possibly chained) command are whitelisted.
+ * For a chain like "git add . && git commit -m 'msg'", BOTH sub-commands
+ * must individually match a whitelist pattern for the whole chain to pass.
+ *
+ * Returns the matching pattern for single commands, or a summary for chains.
+ */
 export function checkWhitelist(command: string, config: Config): { matched: boolean; pattern: string } {
-  for (const pattern of config.strictModeWhiteList) {
-    try {
-      const regex = new RegExp(pattern, "i");
-      if (regex.test(command)) {
-        return { matched: true, pattern };
+  const subCommands = splitChainCommands(command);
+
+  if (subCommands.length === 0) return { matched: false, pattern: "" };
+
+  // For each sub-command, at least one whitelist pattern must match
+  const unmatched: string[] = [];
+  const matchedPatterns: string[] = [];
+
+  for (const sub of subCommands) {
+    let subMatched = false;
+    for (const pattern of config.strictModeWhiteList) {
+      try {
+        const regex = new RegExp(pattern, "i");
+        if (regex.test(sub)) {
+          subMatched = true;
+          matchedPatterns.push(pattern);
+          break;
+        }
+      } catch {
+        continue;
       }
-    } catch {
-      continue;
+    }
+    if (!subMatched) {
+      unmatched.push(sub);
     }
   }
-  return { matched: false, pattern: "" };
+
+  if (unmatched.length > 0) {
+    return { matched: false, pattern: "" };
+  }
+
+  // All matched — return a summary (or first match for single commands)
+  if (subCommands.length === 1) {
+    return { matched: true, pattern: matchedPatterns[0] || "" };
+  }
+  return { matched: true, pattern: `chain of ${subCommands.length} sub-commands — all whitelisted` };
 }
 
 /**
- * Generate a regex pattern from a bash command.
+ * Generate a regex pattern from a single bash command.
  * Escapes special chars while preserving command structure.
  */
 export function generateWhitelistPattern(command: string): string {
@@ -372,11 +424,33 @@ export function generateWhitelistPattern(command: string): string {
 }
 
 /**
- * Add a pattern to the strictModeWhiteList in the project's .pi/patterns.yaml.
+ * Generate whitelist patterns for each sub-command in a (possibly chained) command.
+ * Splits on &&, ||, ; and generates a regex pattern for each individual command.
+ *
+ * Example:
+ *   "git add . && git commit -m 'msg'"
+ *   → ["git add \\.", "git commit -m 'msg'"]
+ */
+export function generateWhitelistPatterns(command: string): string[] {
+  return splitChainCommands(command).map(cmd => generateWhitelistPattern(cmd));
+}
+
+/**
+ * Add a single pattern to the strictModeWhiteList in the project's .pi/patterns.yaml.
  * Creates the file and directory if they don't exist.
  * Does NOT duplicate existing patterns.
  */
 export function addPatternToWhitelist(cwd: string, pattern: string): { added: boolean; reason: string } {
+  const result = addPatternsToWhitelist(cwd, [pattern]);
+  return { added: result.added > 0, reason: result.reason };
+}
+
+/**
+ * Add multiple patterns to the strictModeWhiteList in the project's .pi/patterns.yaml.
+ * Skips duplicates — only truly new patterns are counted as "added".
+ * Creates the file and directory if they don't exist.
+ */
+export function addPatternsToWhitelist(cwd: string, patterns: string[]): { added: number; skipped: number; reason: string } {
   const piDir = join(cwd, ".pi");
   const patternsPath = join(piDir, "patterns.yaml");
 
@@ -385,7 +459,7 @@ export function addPatternToWhitelist(cwd: string, pattern: string): { added: bo
     try {
       mkdirSync(piDir, { recursive: true });
     } catch {
-      return { added: false, reason: `Failed to create directory: ${piDir}` };
+      return { added: 0, skipped: 0, reason: `Failed to create directory: ${piDir}` };
     }
   }
 
@@ -405,22 +479,30 @@ export function addPatternToWhitelist(cwd: string, pattern: string): { added: bo
   // Ensure strictModeWhiteList exists
   const existingList: string[] = (raw.strictModeWhiteList as string[]) || [];
 
-  // Check for duplicates
-  if (existingList.includes(pattern)) {
-    return { added: false, reason: `Pattern already in whitelist: ${pattern}` };
+  let added = 0;
+  let skipped = 0;
+
+  for (const pattern of patterns) {
+    if (existingList.includes(pattern)) {
+      skipped++;
+    } else {
+      existingList.push(pattern);
+      added++;
+    }
   }
 
-  // Add the pattern
-  existingList.push(pattern);
-  raw.strictModeWhiteList = existingList;
+  if (added === 0) {
+    return { added: 0, skipped, reason: `All ${patterns.length} pattern(s) already in whitelist` };
+  }
 
   // Write back
+  raw.strictModeWhiteList = existingList;
   try {
     const yamlStr = stringifyYaml(raw, { lineWidth: 120 });
     writeFileSync(patternsPath, yamlStr, "utf-8");
-    return { added: true, reason: "" };
+    return { added, skipped, reason: "" };
   } catch (e) {
-    return { added: false, reason: `Failed to write patterns: ${String(e)}` };
+    return { added: 0, skipped: 0, reason: `Failed to write patterns: ${String(e)}` };
   }
 }
 
