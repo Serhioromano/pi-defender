@@ -47,6 +47,7 @@ export default function (pi: ExtensionAPI) {
   let approveAllSession = false;
   let aborted = false;
   let needsInitNotify = true;
+  let savedTheme: any = null;
 
   function getConfig(cwd: string): Config {
     if (currentConfig) return currentConfig;
@@ -86,6 +87,7 @@ export default function (pi: ExtensionAPI) {
       try {
         const result = await ctx.ui.custom(
           (_tui: any, theme: any, _kb: any, done: (value: string) => void) => {
+            savedTheme = theme;
             let selectedIndex = 0;
             const options = [
               { value: "allow", label: "⚠️ Allow anyway (dangerous)" },
@@ -366,7 +368,7 @@ export default function (pi: ExtensionAPI) {
 
         if (!ctx.hasUI) {
           stats.strictBlocked++;
-          ctx.ui.notify(`🛡️🔒 Strict Mode: blocked (no UI) — use /defender:strict off to disable`, "error");
+          ctx.ui.notify(`🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: blocked (no UI) — use /defender:strict off to disable`, "error");
           return { block: true, reason: "Strict mode active — all bash commands require approval (no UI available)" };
         }
 
@@ -375,7 +377,7 @@ export default function (pi: ExtensionAPI) {
 
         if (choice === "deny") {
           stats.strictBlocked++;
-          ctx.ui.notify(`🛡️🔒 Strict Mode: denied — try something else`, "warning");
+          ctx.ui.notify(`🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: denied — try something else`, "warning");
           return { block: true, reason: "Blocked by user in strict mode — try a different approach" };
         }
 
@@ -403,13 +405,13 @@ export default function (pi: ExtensionAPI) {
             const skippedNote = addResult.skipped > 0 ? ` (${addResult.skipped} already existed)` : "";
             stats.strictApproved++;
             ctx.ui.notify(
-              `🛡️🔒 Strict Mode: whitelisted 📋 — ${addResult.added} pattern(s)${skippedNote} saved to .pi/patterns.yaml: ${patternList}`,
+              `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: whitelisted 📋 — ${addResult.added} pattern(s)${skippedNote} saved to .pi/patterns.yaml: ${patternList}`,
               "info",
             );
           } else {
             stats.strictApproved++;
             ctx.ui.notify(
-              `🛡️🔒 Strict Mode: approved (whitelist save: ${addResult.reason}) — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
+              `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: approved (whitelist save: ${addResult.reason}) — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
               "warning",
             );
           }
@@ -420,7 +422,7 @@ export default function (pi: ExtensionAPI) {
           approveAllSession = true;
           stats.strictApprovedAll++;
           ctx.ui.notify(
-            `🛡️🔒 Strict Mode: ⭐ Approve All Session activated — future bash commands auto-approved (patterns.yaml rules still enforced)`,
+            `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: ⭐ Approve All Session activated — future bash commands auto-approved (patterns.yaml rules still enforced)`,
             "info",
           );
         } else {
@@ -428,26 +430,26 @@ export default function (pi: ExtensionAPI) {
         }
 
         ctx.ui.notify(
-          `🛡️🔒 Strict Mode: approved — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
+          `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: approved — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
           "info",
         );
       }
     }
 
     // All sub-commands approved — show combined whitelist notification if any
-    if (whitelistedCmds.length === 1) {
-      const w = whitelistedCmds[0];
-      ctx.ui.notify(
-        `🛡️🔒 Strict Mode: whitelisted ✅ — pattern: \`${w.pattern}\` — ${w.cmd.length > 60 ? w.cmd.slice(0, 57) + "..." : w.cmd}`,
-        "info",
-      );
-    } else if (whitelistedCmds.length > 0) {
-      const lines = whitelistedCmds.map(w => `  ${w.cmd}`).join("\n");
-      ctx.ui.notify(
-        `🛡️🔒 Strict Mode: whitelisted ✅ — ${whitelistedCmds.length} commands:\n${lines}`,
-        "info",
-      );
-    }
+      if (whitelistedCmds.length === 1) {
+        const w = whitelistedCmds[0];
+        ctx.ui.notify(
+          `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: whitelisted ✅ — pattern: \`${w.pattern}\` — ${w.cmd.length > 60 ? w.cmd.slice(0, 57) + "..." : w.cmd}`,
+          "info",
+        );
+      } else if (whitelistedCmds.length > 0) {
+        const lines = whitelistedCmds.map(w => `  ${w.cmd}`).join("\n");
+        ctx.ui.notify(
+          `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: whitelisted ✅ — ${whitelistedCmds.length} commands:\n${lines}`,
+          "info",
+        );
+      }
 
     // All sub-commands approved — allow the full chained command to run
     return undefined;
@@ -563,7 +565,7 @@ export default function (pi: ExtensionAPI) {
           approveAllSession = false;
           aborted = false;
           ctx.ui.notify(
-            "🛡️🔒 Strict Mode ACTIVATED (default) — ALL bash commands now require your approval\n" +
+            `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} ACTIVATED (default) — ALL bash commands now require your approval\n` +
             "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Whitelist / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",
@@ -578,7 +580,7 @@ export default function (pi: ExtensionAPI) {
           approveAllSession = false;
           aborted = false;
           ctx.ui.notify(
-            "🛡️ Strict Mode DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.",
+            `🛡️ ${savedTheme.fg("warning", "Strict Mode")} DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.`,
             "info",
           );
         }
@@ -590,7 +592,7 @@ export default function (pi: ExtensionAPI) {
           approveAllSession = false;
           aborted = false;
           ctx.ui.notify(
-            "🛡️ Strict Mode DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.",
+            `🛡️ ${savedTheme.fg("warning", "Strict Mode")} DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.`,
             "info",
           );
         } else {
@@ -599,7 +601,7 @@ export default function (pi: ExtensionAPI) {
           approveAllSession = false;
           aborted = false;
           ctx.ui.notify(
-            "🛡️🔒 Strict Mode ACTIVATED (default) — ALL bash commands now require your approval\n" +
+            `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} ACTIVATED (default) — ALL bash commands now require your approval\n` +
             "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Whitelist / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",
