@@ -319,7 +319,9 @@ export default function (pi: ExtensionAPI) {
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     // Process each sub-command through the full approval pipeline independently
-    const whitelistedCmds: { cmd: string; pattern: string }[] = [];
+    // Collect all sub-command decisions for combined notification at the end
+    interface SubDecision { cmd: string; type: "approved" | "whitelisted" | "approved-all"; }
+    const decisions: SubDecision[] = [];
     for (let idx = 0; idx < subCommands.length; idx++) {
       const subCmd = subCommands[idx];
       const stepInfo = subCommands.length > 1 ? `(${idx + 1}/${subCommands.length})` : undefined;
@@ -379,14 +381,14 @@ export default function (pi: ExtensionAPI) {
         const whitelistCheck = checkWhitelist(subCmd, config);
         if (whitelistCheck.matched) {
           stats.strictApproved++;
-          whitelistedCmds.push({ cmd: subCmd, pattern: whitelistCheck.pattern });
+          decisions.push({ cmd: subCmd, type: "whitelisted" });
           continue;
         }
 
         // approveAllSession auto-approves commands not blocked by patterns.yaml
         if (approveAllSession) {
           stats.strictApproved++;
-          whitelistedCmds.push({ cmd: subCmd, pattern: "approve-all-session" });
+          decisions.push({ cmd: subCmd, type: "approved-all" });
           continue;
         }
 
@@ -424,56 +426,40 @@ export default function (pi: ExtensionAPI) {
           // Reload config to pick up new whitelist entries
           currentConfig = null;
 
-          if (addResult.added > 0) {
-            const patternList = whitelistPatterns.map(p => `\`${p}\``).join(", ");
-            const skippedNote = addResult.skipped > 0 ? ` (${addResult.skipped} already existed)` : "";
-            stats.strictApproved++;
-            ctx.ui.notify(
-              `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: whitelisted 📋 — ${addResult.added} pattern(s)${skippedNote} saved to .pi/patterns.yaml: ${patternList}`,
-              "info",
-            );
-          } else {
-            stats.strictApproved++;
-            ctx.ui.notify(
-              `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: approved (whitelist save: ${addResult.reason}) — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
-              "warning",
-            );
-          }
+          stats.strictApproved++;
+          decisions.push({ cmd: subCmd, type: "whitelisted" });
           continue;
         }
 
         if (choice === "approve_all") {
           approveAllSession = true;
           stats.strictApprovedAll++;
-          ctx.ui.notify(
-            `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: ⭐ Approve All Session activated — future bash commands auto-approved (patterns.yaml rules still enforced)`,
-            "info",
-          );
+          decisions.push({ cmd: subCmd, type: "approved-all" });
         } else {
           stats.strictApproved++;
         }
-
-        ctx.ui.notify(
-          `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: approved — ${subCmd.length > 60 ? subCmd.slice(0, 57) + "..." : subCmd}`,
-          "info",
-        );
+        decisions.push({ cmd: subCmd, type: "approved" });
+        continue;
       }
     }
 
-    // All sub-commands approved — show combined whitelist notification if any
-      if (whitelistedCmds.length === 1) {
-        const w = whitelistedCmds[0];
-        ctx.ui.notify(
-          `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: whitelisted ✅ — pattern: \`${w.pattern}\` — ${w.cmd.length > 60 ? w.cmd.slice(0, 57) + "..." : w.cmd}`,
-          "info",
-        );
-      } else if (whitelistedCmds.length > 0) {
-        const lines = whitelistedCmds.map(w => `  ${w.cmd}`).join("\n");
-        ctx.ui.notify(
-          `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: whitelisted ✅ — ${whitelistedCmds.length} commands:\n${lines}`,
-          "info",
-        );
-      }
+    // Show unified notification — same format for single and chain commands
+    if (decisions.length > 0) {
+      const lines = decisions.map(d => {
+        const labels = {
+          approved: "✅ Approved",
+          "approved-all": "⭐ Approved all",
+          whitelisted: "📋 Whitelisted",
+        };
+        const label = labels[d.type] || "✅ Approved";
+        const cmdText = d.cmd.length > 35 ? d.cmd.slice(0, 32) + "..." : d.cmd;
+        return `  ${label}: ${savedTheme.fg("accent", cmdText)}`;
+      }).join("\n");
+      ctx.ui.notify(
+        `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} actions:\n${lines}`,
+        "info",
+      );
+    }
 
     // All sub-commands approved — allow the full chained command to run
     return undefined;

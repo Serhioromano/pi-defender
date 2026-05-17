@@ -1,1 +1,0 @@
-Давай изменим логику белого списка. Сейчас кгда человек выбирает в strict mode to approve and whitelist all command is added to whitelist. But bash commands may be in chanes. We need to add every chane command separately and also check every chain command separately.

@@ -8,6 +8,8 @@ All notable changes to Pi Defender will be documented in this file.
 - `fix` - Enter key not working in WSL with Kitty keyboard protocol
 - `improve` - Chain command: approve or whitelist every command in the chain separately. Commands joined with `&&`, `||`, or `;` are split into individual sub-commands and each goes through the full approval pipeline independently.
 - `improve` - Command display improvements** in both strict mode and patterns.yaml prompts:
+- `fix` - **Info messages lost for chained commands** (#1): `ctx.ui.notify()` calls from earlier sub-commands in a chain were immediately overwritten by later ones. Now ALL sub-command decisions are collected and shown in a single combined notification with per-command status indicators (✅ whitelisted, 📋 whitelist-saved, ⭐ approve-all).
+- `fix` - **savedTheme crash**: `savedTheme` was only set in `patternBlockedPrompt`'s callback, causing `TypeError` when `strictModePrompt` ran first. Fixed by saving theme in both prompts.
 
 ## [v1.2.6]
 
