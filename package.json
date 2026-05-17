@@ -1,6 +1,6 @@
 {
   "name": "pi-defender",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "description": "Defense-in-depth protection for Pi coding agent. Blocks dangerous commands and protects sensitive files — rename of pi-damage-control.",
   "license": "MIT",
   "author": "Serhioromano",
@@ -19,6 +19,7 @@
     "damage-control"
   ],
   "dependencies": {
+    "@earendil-works/pi-tui": "^0.74.0",
     "yaml": "^2.7.0"
   },
   "pi": {

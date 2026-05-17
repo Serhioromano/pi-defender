@@ -23,6 +23,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
+import { matchesKey, Key } from "@earendil-works/pi-tui";
 import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, type Config } from "./config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -126,15 +127,15 @@ export default function (pi: ExtensionAPI) {
               render,
               invalidate: () => { },
               handleInput: (data: string) => {
-                if (data === "\x1b[A" || data === "k") {
+                if (matchesKey(data, Key.up) || data === "k") {
                   selectedIndex = (selectedIndex - 1 + options.length) % options.length;
                   _tui.requestRender();
-                } else if (data === "\x1b[B" || data === "j") {
+                } else if (matchesKey(data, Key.down) || data === "j") {
                   selectedIndex = (selectedIndex + 1) % options.length;
                   _tui.requestRender();
-                } else if (data === "\r" || data === "\n") {
+                } else if (matchesKey(data, Key.enter)) {
                   done(options[selectedIndex].value);
-                } else if (data === "\x1b") {
+                } else if (matchesKey(data, Key.escape)) {
                   done("deny");
                 }
               },
@@ -214,15 +215,15 @@ export default function (pi: ExtensionAPI) {
               render,
               invalidate: () => { },
               handleInput: (data: string) => {
-                if (data === "\x1b[A" || data === "k") {
+                if (matchesKey(data, Key.up) || data === "k") {
                   selectedIndex = (selectedIndex - 1 + options.length) % options.length;
                   _tui.requestRender();
-                } else if (data === "\x1b[B" || data === "j") {
+                } else if (matchesKey(data, Key.down) || data === "j") {
                   selectedIndex = (selectedIndex + 1) % options.length;
                   _tui.requestRender();
-                } else if (data === "\r" || data === "\n") {
+                } else if (matchesKey(data, Key.enter)) {
                   done(options[selectedIndex].value);
-                } else if (data === "\x1b") {
+                } else if (matchesKey(data, Key.escape)) {
                   done("deny");
                 }
               },

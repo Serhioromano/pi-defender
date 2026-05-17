@@ -119,6 +119,17 @@ Two custom UI prompts using `ctx.ui.custom()`:
 
 Both fall back to `ctx.ui.confirm()` if custom UI unavailable.
 
+### Keyboard input handling
+
+Both selectors import `matchesKey` and `Key` from `@earendil-works/pi-tui` for keyboard
+input matching. Raw byte comparisons (`data === "\r"`, `data === "\x1b[A"`) are
+NOT used — `matchesKey(data, Key.enter)` and `matchesKey(data, Key.up)` handle both
+legacy terminal sequences AND Kitty keyboard protocol CSI-u sequences. This is
+essential for VS Code + WSL environments where Kitty protocol is active and Enter
+sends `\x1b[13~` instead of legacy `\r`.
+
+Vim-style `k`/`j` navigation is kept as a fallback alongside `matchesKey(data, Key.up/down)`.
+
 ### Chained command processing
 
 When a bash command contains chain separators (`&&`, `||`, `;`), `splitChainCommands()` from `config.ts` breaks it into individual sub-commands. Each sub-command is then processed independently through `checkCommand()` + `patternBlockedPrompt()` + `strictModePrompt()`. All sub-commands must be approved for the full chain to execute.

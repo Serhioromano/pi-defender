@@ -2,6 +2,12 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [v1.2.8]
+
+### Fixed
+- **Enter key not working in WSL with Kitty keyboard protocol**: The custom UI selectors (`patternBlockedPrompt` and `strictModePrompt`) checked for raw terminal byte sequences (`\r`/`\n` for Enter, `\x1b[A`/`\x1b[B` for arrows). When Kitty keyboard protocol is active (e.g. VS Code + WSL + Windows Terminal), Enter sends a CSI-u sequence like `\x1b[13~` instead of legacy `\r`, causing the selector to ignore the keystroke. Fixed by importing `matchesKey()` and `Key` from `@earendil-works/pi-tui` and using them for all keyboard matching — this handles both legacy and Kitty protocol sequences correctly.
+- Added `@earendil-works/pi-tui` as a direct dependency (was only transitive via `@earendil-works/pi-coding-agent`).
+
 ## [v1.2.7]
 
 ### Changed

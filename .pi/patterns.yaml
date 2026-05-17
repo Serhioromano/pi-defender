@@ -1,0 +1,3 @@
+strictModeWhiteList:
+  - find /home/sergey/\.nvm/versions/node/v24\.15\.0/lib/node_modules/@earendil-works -name "\*\.ts" -path
+    "\*/pi-coding-agent\*" \| head -30
