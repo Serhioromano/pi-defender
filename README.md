@@ -54,6 +54,7 @@ Block ALL bash tool execution and require explicit user approval for every comma
   - 📋 **Allow & Whitelist** — remember this command pattern for future sessions
   - ❌ **Abort (stop all execution)** — block this command AND lock all future bash commands until reset
 - **patterns.yaml always enforced**: Commands matching blocked patterns are never allowed, even with approve-all or whitelist
+- **Number key shortcuts**: Press `1`-`N` to instantly select any option — faster than arrow keys
 - **Whitelist**: Save trusted commands to `.pi/patterns.yaml` for persistent auto-approval across sessions
 - Toggle with `/defender:strict` (on|off, or no parameter to toggle)
 - Shows 🛡️🔒 badge when active
@@ -209,9 +210,11 @@ When the agent tries to run a bash command, a selector appears with the command 
    ⚠️ Deny (try something else)
    ❌ Abort (stop all execution)
 
- ↑↓ navigate · enter select · esc deny
+ ↑↓ navigate · 1-N select · enter confirm · esc deny
 ────────────────────────────────────────────────
 ```
+
+Press `1`-`5` to select an option instantly — much faster than arrow keys.
 
 **Chained command (e.g. `git add . && git commit -m "msg"`)** — *two separate selectors appear, one per sub-command.* First for `git add .`:
 ```

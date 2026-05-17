@@ -23,7 +23,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Key } from "@earendil-works/pi-tui";
+import { matchesKey, Key, decodeKittyPrintable } from "@earendil-works/pi-tui";
 import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, type Config } from "./config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -112,13 +112,16 @@ export default function (pi: ExtensionAPI) {
               for (let i = 0; i < options.length; i++) {
                 const isSelected = i === selectedIndex;
                 const prefix = isSelected ? theme.fg("accent", "▶") : " ";
-                const label = isSelected
-                  ? theme.fg("accent", options[i].label)
-                  : options[i].label;
-                lines.push(` ${prefix} ${label}`);
+                const numTag = `[${i + 1}]`;
+                const linePrefix = `${prefix} ${numTag}`;
+                if (isSelected) {
+                  lines.push(` ${linePrefix} ${theme.fg("accent", options[i].label)}`);
+                } else {
+                  lines.push(` ${linePrefix} ${options[i].label}`);
+                }
               }
               lines.push("");
-              lines.push(theme.fg("dim", " ↑↓ navigate · enter select · esc deny"));
+              lines.push(theme.fg("dim", " ↑↓ navigate · 1-N select · enter confirm · esc deny"));
               lines.push(theme.fg("warning", sep));
               return lines;
             }
@@ -137,6 +140,14 @@ export default function (pi: ExtensionAPI) {
                   done(options[selectedIndex].value);
                 } else if (matchesKey(data, Key.escape)) {
                   done("deny");
+                } else {
+                  const printable = decodeKittyPrintable(data) || data;
+                  if (printable >= "1" && printable <= "9") {
+                    const idx = parseInt(printable, 10) - 1;
+                    if (idx >= 0 && idx < options.length) {
+                      done(options[idx].value);
+                    }
+                  }
                 }
               },
             };
@@ -189,11 +200,11 @@ export default function (pi: ExtensionAPI) {
               const lines: string[] = [];
               const sep = "─".repeat(Math.min(width, 80));
               const stepTag = stepInfo ? ` ${stepInfo}` : "";
-              lines.push(theme.fg("accent", sep));
-              lines.push(theme.fg("accent", theme.bold(` 🛡️🔒 Strict Mode — Bash Command${stepTag}`)));
+              lines.push(theme.fg("warning", sep));
+              lines.push(theme.fg("warning", theme.bold(` 🛡️🔒 Strict Mode — Bash Command${stepTag}`)));
               lines.push(`  ${theme.fg("muted","Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("muted", "to turn Strict Mode off and stop these prompts to popup.")}`);
               lines.push("");
-              lines.push(theme.fg("accent", theme.bold(" Command:")));
+              lines.push(theme.fg("warning", theme.bold(" Command:")));
               for (const cmdLine of cmdLines) {
                 lines.push(theme.fg("accent", `  ${cmdLine}`));
               }
@@ -201,13 +212,16 @@ export default function (pi: ExtensionAPI) {
               for (let i = 0; i < options.length; i++) {
                 const isSelected = i === selectedIndex;
                 const prefix = isSelected ? theme.fg("accent", "▶") : " ";
-                const label = isSelected
-                  ? theme.fg("accent", options[i].label)
-                  : options[i].label;
-                lines.push(` ${prefix} ${label}`);
+                const numTag = `[${i + 1}]`;
+                const linePrefix = `${prefix} ${numTag}`;
+                if (isSelected) {
+                  lines.push(` ${linePrefix} ${theme.fg("accent", options[i].label)}`);
+                } else {
+                  lines.push(` ${linePrefix} ${options[i].label}`);
+                }
               }
               lines.push("");
-              lines.push(theme.fg("dim", " ↑↓ navigate · enter select · esc deny"));
+              lines.push(theme.fg("dim", " ↑↓ navigate · 1-N select · enter confirm · esc deny"));
               lines.push(theme.fg("accent", sep));
               return lines;
             }
@@ -226,6 +240,14 @@ export default function (pi: ExtensionAPI) {
                   done(options[selectedIndex].value);
                 } else if (matchesKey(data, Key.escape)) {
                   done("deny");
+                } else {
+                  const printable = decodeKittyPrintable(data) || data;
+                  if (printable >= "1" && printable <= "9") {
+                    const idx = parseInt(printable, 10) - 1;
+                    if (idx >= 0 && idx < options.length) {
+                      done(options[idx].value);
+                    }
+                  }
                 }
               },
             };

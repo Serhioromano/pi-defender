@@ -1,3 +1,5 @@
 strictModeWhiteList:
   - find /home/sergey/\.nvm/versions/node/v24\.15\.0/lib/node_modules/@earendil-works -name "\*\.ts" -path
     "\*/pi-coding-agent\*" \| head -30
+  - grep -n "navigate\\\|1-N\\\|↑↓" /home/sergey/www/pi-defender/README\.md
+  - cd /home/sergey/www/pi-defender && npx tsc --noEmit 2>&1

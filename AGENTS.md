@@ -119,6 +119,15 @@ Two custom UI prompts using `ctx.ui.custom()`:
 
 Both fall back to `ctx.ui.confirm()` if custom UI unavailable.
 
+### Number key shortcuts
+
+Both selectors support **number key shortcuts** (`1`-`N`) for instant selection.
+Each option is prefixed with `[N]` — press the corresponding number to select:
+- `1` = first option, `2` = second, etc.
+- Works in both pattern-blocked (2 options) and strict mode (5 options) selectors
+- Much faster than arrow keys for common actions: press `2` to whitelist, `3` for approve-all
+- Footer shows: `↑↓ navigate · 1-N select · enter confirm · esc deny`
+
 ### Keyboard input handling
 
 Both selectors import `matchesKey` and `Key` from `@earendil-works/pi-tui` for keyboard
@@ -130,7 +139,15 @@ sends `\x1b[13~` instead of legacy `\r`.
 
 Vim-style `k`/`j` navigation is kept as a fallback alongside `matchesKey(data, Key.up/down)`.
 
-**Theme saving**: Both prompts save `savedTheme = theme` in their `ctx.ui.custom()`
+Digit input uses `decodeKittyPrintable(data) || data` to handle **both** Kitty
+CSI-u protocol (VS Code + WSL) and legacy ASCII terminals. In Kitty protocol,
+pressing `1` sends a CSI-u sequence (e.g. `\x1b[49~`) instead of raw ASCII `1`.
+`decodeKittyPrintable()` decodes it back to `"1"`; in legacy mode it returns
+`undefined` and `data` (the raw ASCII byte) is used as fallback.
+
+### Theme saving
+
+Both prompts save `savedTheme = theme` in their `ctx.ui.custom()`
 callbacks. This is critical — `savedTheme` is used throughout the Bash handler for
 notification formatting. If either prompt runs without saving, `savedTheme` remains
 `null` and the handler crashes mid-loop on `savedTheme.fg()` calls, causing subsequent
