@@ -45,7 +45,7 @@ export default function (pi: ExtensionAPI) {
   let currentConfig: Config | null = null;
   let stats = { blocked: 0, asked: 0, allowed: 0, strictBlocked: 0, strictApproved: 0, strictApprovedAll: 0 };
   let strictMode = true; // ON by default
-  let approveAllSession = false;
+  const sessionApprovedPatterns: string[] = []; // session-scoped approve-all patterns (regex-escaped commands)
   let aborted = false;
   let needsInitNotify = true;
   let savedTheme: any = null;
@@ -71,6 +71,32 @@ export default function (pi: ExtensionAPI) {
   // ===========================================================================
   // PATTERN-BLOCKED SELECTOR (patterns.yaml violations)
   // ===========================================================================
+
+  /**
+   * Check if a command matches any session-approved (approve-all) pattern.
+   * Works the same as checkWhitelist but against in-memory sessionApprovedPatterns.
+   */
+  function checkSessionApproved(command: string, patterns: string[]): { matched: boolean } {
+    const subCommands = splitChainCommands(command);
+    if (subCommands.length === 0) return { matched: false };
+
+    for (const sub of subCommands) {
+      let subMatched = false;
+      for (const pattern of patterns) {
+        try {
+          const regex = new RegExp(pattern, "i");
+          if (regex.test(sub)) {
+            subMatched = true;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (!subMatched) return { matched: false };
+    }
+    return { matched: true };
+  }
 
   /**
    * Format a single command for display — truncates if too long.
@@ -191,7 +217,7 @@ export default function (pi: ExtensionAPI) {
             const options = [
               { value: "approve", label: "✅ Approve this command" },
               { value: "whitelist", label: "📋 Approve & Whitelist (remember for future)" },
-              { value: "approve_all", label: "⭐ Approve ALL session (skip future prompts for safe commands)" },
+              { value: "approve_all", label: "⭐ Approve ALL (auto-approve future occurrences of THIS command)" },
               { value: "deny", label: "⚠️ Deny (try something else)" },
               { value: "abort", label: "❌ Abort (stop all execution)" },
             ];
@@ -280,11 +306,12 @@ export default function (pi: ExtensionAPI) {
     return "deny";
   }
 
-  pi.on("message_start", async (event, ctx) => {
+  pi.on("message_start", async (_event, _ctx) => {
     aborted = false;
+    sessionApprovedPatterns.length = 0; // clear approve-all patterns each new prompt
   });
 
-  pi.on("message_end", async (event, ctx) => {
+  pi.on("message_end", async (_event, _ctx) => {
     aborted = false;
   });
 
@@ -385,8 +412,9 @@ export default function (pi: ExtensionAPI) {
           continue;
         }
 
-        // approveAllSession auto-approves commands not blocked by patterns.yaml
-        if (approveAllSession) {
+        // Session-approved patterns: auto-approve commands matching a previously "Approve All"-ed pattern
+        const sessionApprovedCheck = checkSessionApproved(subCmd, sessionApprovedPatterns);
+        if (sessionApprovedCheck.matched) {
           stats.strictApproved++;
           decisions.push({ cmd: subCmd, type: "approved-all" });
           continue;
@@ -432,13 +460,19 @@ export default function (pi: ExtensionAPI) {
         }
 
         if (choice === "approve_all") {
-          approveAllSession = true;
+          // Add this command's pattern to session-approved set (NOT global approve-all)
+          const patterns = generateWhitelistPatterns(subCmd);
+          for (const p of patterns) {
+            if (!sessionApprovedPatterns.includes(p)) {
+              sessionApprovedPatterns.push(p);
+            }
+          }
           stats.strictApprovedAll++;
           decisions.push({ cmd: subCmd, type: "approved-all" });
         } else {
           stats.strictApproved++;
+          decisions.push({ cmd: subCmd, type: "approved" });
         }
-        decisions.push({ cmd: subCmd, type: "approved" });
         continue;
       }
     }
@@ -530,8 +564,9 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       const config = getConfig(ctx.cwd);
       const abortStatus = aborted ? " ❌ ABORTED" : "";
+      const approveCount = sessionApprovedPatterns.length;
       const strictStatus = strictMode
-        ? `🔒 ACTIVE (default)${approveAllSession ? " (approve-all session)" : ""}${abortStatus}`
+        ? `🔒 ACTIVE (default)${approveCount > 0 ? ` (${approveCount} session-approved)` : ""}${abortStatus}`
         : aborted
           ? `❌ ABORTED (use /defender:strict off to reset)`
           : "⚪ OFF (non-default)";
@@ -540,6 +575,7 @@ export default function (pi: ExtensionAPI) {
         `  Allowed: ${stats.allowed} | Blocked: ${stats.blocked} | Asked: ${stats.asked}\n` +
         `  Strict mode: ${strictStatus}\n` +
         `  Strict: ${stats.strictApproved} approved | ${stats.strictBlocked} blocked | ${stats.strictApprovedAll} approve-all\n` +
+        `  Session-approved patterns: ${sessionApprovedPatterns.length}\n` +
         `  Bash patterns: ${config.bashToolPatterns.length}\n` +
         `  Whitelist patterns: ${config.strictModeWhiteList.length}\n` +
         `  Zero-access paths: ${config.zeroAccessPaths.length}\n` +
@@ -572,7 +608,7 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify("🛡️🔒 Strict Mode is already ACTIVE (default)", "warning");
         } else {
           strictMode = true;
-          approveAllSession = false;
+          sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
             `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} ACTIVATED (default) — ALL bash commands now require your approval\n` +
@@ -587,7 +623,7 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify("🛡️ Strict Mode is already OFF (non-default)", "warning");
         } else {
           strictMode = false;
-          approveAllSession = false;
+          sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
             `🛡️ ${savedTheme.fg("warning", "Strict Mode")} DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.`,
@@ -599,7 +635,7 @@ export default function (pi: ExtensionAPI) {
         if (strictMode || aborted) {
           // Turning OFF
           strictMode = false;
-          approveAllSession = false;
+          sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
             `🛡️ ${savedTheme.fg("warning", "Strict Mode")} DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.`,
@@ -608,7 +644,7 @@ export default function (pi: ExtensionAPI) {
         } else {
           // Turning ON
           strictMode = true;
-          approveAllSession = false;
+          sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
             `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} ACTIVATED (default) — ALL bash commands now require your approval\n` +
@@ -629,7 +665,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     currentConfig = null;
     aborted = false;
-    approveAllSession = false;
+    sessionApprovedPatterns.length = 0;
   });
 }
 
