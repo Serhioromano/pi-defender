@@ -413,14 +413,92 @@ export function checkWhitelist(command: string, config: Config): { matched: bool
   return { matched: true, pattern: `chain of ${subCommands.length} sub-commands — all whitelisted` };
 }
 
+// =============================================================================
+// TOKENIZER — split bash command into tokens respecting quotes
+// =============================================================================
+
+function tokenize(command: string): string[] {
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < command.length) {
+    // Skip whitespace
+    while (i < command.length && /\s/.test(command[i])) i++;
+    if (i >= command.length) break;
+
+    let token = "";
+    if (command[i] === '"' || command[i] === "'") {
+      const quote = command[i];
+      i++; // skip opening quote
+      while (i < command.length && command[i] !== quote) {
+        if (command[i] === "\\") i++; // skip escaped char
+        token += command[i];
+        i++;
+      }
+      i++; // skip closing quote
+    } else {
+      while (i < command.length && !/\s/.test(command[i])) {
+        if (command[i] === "\\") i++; // skip escaped char
+        token += command[i];
+        i++;
+      }
+    }
+    tokens.push(token);
+  }
+  return tokens;
+}
+
 /**
- * Generate a regex pattern from a single bash command.
- * Escapes special chars while preserving command structure.
+ * Extract just the command name from a full path.
+ * "/usr/bin/find" → "find", "find" → "find"
+ */
+function getCommandName(token: string): string {
+  const parts = token.replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || token;
+}
+
+// Meta-commands: tools whose first argument is a subcommand that defines what they do
+const META_COMMANDS = new Set([
+  "git", "npm", "npx", "yarn", "pnpm", "bun",
+  "docker", "docker-compose", "kubectl", "helm",
+  "pip", "pip3", "cargo", "go", "rustup",
+  "systemctl", "journalctl", "pm2", "make",
+]);
+
+/**
+ * Generate a whitelist regex pattern from a single bash command.
+ * Extracts only the tool identity — base command plus subcommand (for meta-tools)
+ * — and wraps in ^...\b. Strips all flags, parameters, paths, and directories.
+ *
+ * Examples:
+ *   "find . -name '*.ts'"   → "^find\\b"
+ *   "git diff HEAD~1"       → "^git diff\\b"
+ *   "npx tsc --noEmit"      → "^npx tsc\\b"
+ *   "npm run build"         → "^npm run\\b"
+ *   "grep -n 'pat' file"    → "^grep\\b"
+ *   "ls -la /tmp"           → "^ls\\b"
+ *   "/usr/bin/curl url"     → "^curl\\b"
  */
 export function generateWhitelistPattern(command: string): string {
-  const trimmed = command.trim();
+  const tokens = tokenize(command.trim());
+  if (tokens.length === 0) return "";
+
+  const identity: string[] = [];
+
+  // First token is always the base command (strip path prefix if present)
+  identity.push(getCommandName(tokens[0]));
+
+  // For meta-commands, include the subcommand if it's not a flag
+  if (META_COMMANDS.has(getCommandName(tokens[0])) && tokens.length > 1) {
+    const sub = tokens[1];
+    if (!sub.startsWith("-")) {
+      identity.push(sub);
+    }
+  }
+
+  const raw = identity.join(" ");
   // Escape regex special chars, preserving the literal command as a pattern
-  return trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return `^${escaped}\\b`;
 }
 
 /**
@@ -428,8 +506,8 @@ export function generateWhitelistPattern(command: string): string {
  * Splits on &&, ||, ; and generates a regex pattern for each individual command.
  *
  * Example:
- *   "git add . && git commit -m 'msg'"
- *   → ["git add \\.", "git commit -m 'msg'"]
+ *   "git diff HEAD~1 && npm run build"
+ *   → ["^git diff\\b", "^npm run\\b"]
  */
 export function generateWhitelistPatterns(command: string): string[] {
   return splitChainCommands(command).map(cmd => generateWhitelistPattern(cmd));

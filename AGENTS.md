@@ -74,7 +74,8 @@ Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
 ### Whitelist (config.ts)
 
 - **checkWhitelist(command, config)** → `{ matched, pattern }` — tests command against all `strictModeWhiteList` regex patterns
-- **generateWhitelistPattern(command)** — escapes regex-special chars, returns a literal-match pattern
+- **generateWhitelistPattern(command)** — extracts tool identity (base command + subcommand for meta-tools like git, npm, npx, docker), strips all parameters/flags/paths/directories, tokenizes respecting quotes, reduces path-prefixed commands to basename, wraps in `^...\b`
+- **generateWhitelistPatterns(command)** — splits chained commands and applies `generateWhitelistPattern` to each
 - **addPatternToWhitelist(cwd, pattern)** — reads/creates `.pi/patterns.yaml`, appends pattern to `strictModeWhiteList`, writes back. Returns `{ added, reason }`. Auto-creates `.pi/` dir and file as needed.
 
 ### Session-approved patterns (index.ts)

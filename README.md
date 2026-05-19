@@ -263,7 +263,14 @@ When strict mode prompts you for a command you trust (like `npm test` or `git st
 - The file is created automatically if it doesn't exist
 - Duplicate patterns are detected and not re-added
 - When a whitelisted command runs, a notification shows which pattern matched
-- Patterns are JS regex — you can manually edit `.pi/patterns.yaml` to refine them
+- **Patterns extract only the tool identity** — base command + subcommand for meta-tools (git, npm, npx, docker, etc.) — stripping all parameters, flags, paths, and directories:
+  - `find . -name "*.ts"` → `^find\b`
+  - `git diff HEAD~1` → `^git diff\b`
+  - `npx tsc --noEmit` → `^npx tsc\b`
+  - `grep -n "pat" file` → `^grep\b`
+  - `ls -la /tmp` → `^ls\b`
+- The `^...\b` anchors ensure precise matching: `^find\b` matches `find` but not `findmnt` or `find . -name`
+- Patterns are JS regex — you can manually edit `.pi/patterns.yaml` to refine them (e.g. add flags: `^grep -n\b`)
 
 ### Deactivate
 

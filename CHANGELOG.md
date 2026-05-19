@@ -2,6 +2,16 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [v1.3.3]
+
+- `change` - **Whitelist patterns now extract only tool identity**: When whitelisting a command via 📋 "Allow & Whitelist", the generated regex pattern now strips all parameters, flags, paths, and directories — keeping only the base command and subcommand. Previously the entire literal command was escaped as-is. Examples:
+  - `find . -name "*.ts"` → `^find\b` (was: `find \. -name "\*\.ts"`)
+  - `git diff HEAD~1` → `^git diff\b` (was: `git diff HEAD~1`)
+  - `npx tsc --noEmit` → `^npx tsc\b` (was: `npx tsc --noEmit`)
+  - Meta-commands (git, npm, npx, docker, kubectl, etc.) include subcommand; simple commands (find, grep, ls, cat, curl) include only the base command
+  - Command names with path prefixes (`/usr/bin/curl`) are reduced to basename (`curl`)
+- `add` - **Tokenize bash commands** respecting single/double quotes for reliable tool identity extraction
+
 ## [v1.3.2]
 
 - `fix` - **TUI crash when command exceeds terminal width** (#3): Commands longer than the terminal width caused Pi to crash with "Rendered line exceeds terminal width". Fixed by using `truncateToWidth()` from `@earendil-works/pi-tui` in `formatCommandForDisplay()` — both `patternBlockedPrompt` and `strictModePrompt` render functions now truncate commands to `width - 2` (accounting for the 2-space indent) using ANSI-aware width measurement.
