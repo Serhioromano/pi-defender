@@ -79,7 +79,7 @@ export default function (pi: ExtensionAPI) {
           savedTheme = theme;
           let selectedIndex = 0;
           const options = [
-            { value: "strict", label: "🔒 Strict Mode ON (default)", desc: "Every bash command goes through filtering or approval" },
+            { value: "strict", label: "🔒 Strict Mode ON (recommended)", desc: "Every bash command goes through filtering or approval" },
             { value: "patterns", label: "🛡️ Patterns only", desc: "Only patterns.yaml blocked rules are enforced for confirmation" },
             { value: "off", label: "⚪ Disable Defender", desc: "No protection — use `/defender:strict on` to re-enable" },
           ];
