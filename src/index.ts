@@ -47,7 +47,7 @@ export default function (pi: ExtensionAPI) {
   let strictMode = true; // ON by default
   const sessionApprovedPatterns: string[] = []; // session-scoped approve-all patterns (regex-escaped commands)
   let aborted = false;
-  let needsInitNotify = true;
+  let defenderDisabled = false; // set by session-start "Disable Defender" — skips ALL tool_call analysis
   let savedTheme: any = null;
 
   function getConfig(cwd: string): Config {
@@ -62,10 +62,111 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     const config = getConfig(ctx.cwd);
-    ctx.ui.notify(
-      `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
-      "info",
-    );
+
+    if (!ctx.hasUI || typeof ctx.ui?.custom !== "function") {
+      // No UI — default to strict mode ON with plain notification
+      strictMode = true;
+      ctx.ui.notify(
+        `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+        "info",
+      );
+      return;
+    }
+
+    try {
+      const result = await ctx.ui.custom(
+        (_tui: any, theme: any, _kb: any, done: (value: string) => void) => {
+          savedTheme = theme;
+          let selectedIndex = 0;
+          const options = [
+            { value: "strict", label: "🔒 Strict Mode ON (default)", desc: "Every bash command requires your approval" },
+            { value: "patterns", label: "🛡️ Patterns only", desc: "Only patterns.yaml blocked rules are enforced" },
+            { value: "off", label: "⚪ Disable Defender", desc: "No protection — use /defender:strict to re-enable" },
+          ];
+
+          function render(width: number): string[] {
+            const lines: string[] = [];
+            const sep = "─".repeat(Math.min(width, 74));
+            lines.push(theme.fg("accent", sep));
+            lines.push(theme.fg("accent", theme.bold(` 🛡️ Pi Defender v${DEFENDER_VERSION}`)));
+            lines.push("");
+            lines.push(theme.fg("warning", " Choose protection level for this session:"));
+            lines.push("");
+            for (let i = 0; i < options.length; i++) {
+              const isSelected = i === selectedIndex;
+              const prefix = isSelected ? theme.fg("accent", "▶") : " ";
+              const numTag = `[${i + 1}]`;
+              const linePrefix = ` ${prefix} ${numTag}`;
+              if (isSelected) {
+                lines.push(` ${linePrefix} ${theme.fg("accent", options[i].label)}`);
+                lines.push(`        ${theme.fg("dim", options[i].desc)}`);
+              } else {
+                lines.push(` ${linePrefix} ${options[i].label}`);
+                lines.push(`        ${theme.fg("dim", options[i].desc)}`);
+              }
+            }
+            lines.push("");
+            lines.push(theme.fg("dim", " ↑↓ navigate · 1-N select · enter confirm"));
+            lines.push(theme.fg("accent", sep));
+            return lines;
+          }
+
+          return {
+            render,
+            invalidate: () => {},
+            handleInput: (data: string) => {
+              const digit = decodeKittyPrintable(data) || data;
+              if (/^[1-3]$/.test(digit)) {
+                done(options[parseInt(digit) - 1].value);
+                return;
+              }
+              if (matchesKey(data, Key.enter)) {
+                done(options[selectedIndex].value);
+                return;
+              }
+              if (matchesKey(data, Key.up) || data === "k") {
+                selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+                _tui.requestRender();
+                return;
+              }
+              if (matchesKey(data, Key.down) || data === "j") {
+                selectedIndex = (selectedIndex + 1) % options.length;
+                _tui.requestRender();
+                return;
+              }
+            },
+          };
+        },
+      );
+
+      const choice = (result ?? "strict") as string;
+      if (choice === "off") {
+        strictMode = false;
+        defenderDisabled = true;
+        ctx.ui.notify("🛡️ Defender DISABLED — skipping all tool_call analysis. Use /defender:strict to re-enable.", "warning");
+      } else if (choice === "patterns") {
+        strictMode = false;
+        defenderDisabled = false;
+        ctx.ui.notify(
+          `🛡️ Patterns-only mode active (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only). Use /defender:strict on for full protection.`,
+          "info",
+        );
+      } else {
+        strictMode = true;
+        defenderDisabled = false;
+        ctx.ui.notify(
+          `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+          "info",
+        );
+      }
+    } catch {
+      // Fallback if custom UI fails
+      strictMode = true;
+      ctx.ui.notify(
+        `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+        "info",
+      );
+    }
   });
 
   // ===========================================================================
@@ -325,16 +426,7 @@ export default function (pi: ExtensionAPI) {
   // ===========================================================================
 
   pi.on("tool_call", async (event, ctx) => {
-    // Show "Defender active" on extension init (covers /reload)
-    if (needsInitNotify) {
-      needsInitNotify = false;
-      const config = getConfig(ctx.cwd);
-      ctx.ui.notify(
-        `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
-        "info",
-      );
-    }
-
+    if (defenderDisabled) return undefined;
     if (!isToolCallEventType("bash", event)) return undefined;
 
     const command = event.input.command;
@@ -352,8 +444,9 @@ export default function (pi: ExtensionAPI) {
 
     // Process each sub-command through the full approval pipeline independently
     // Collect all sub-command decisions for combined notification at the end
-    interface SubDecision { cmd: string; type: "approved" | "whitelisted" | "approved-all"; }
+    interface SubDecision { cmd: string; type: "approved" | "whitelisted" | "approved-all"; pattern?: string; }
     const decisions: SubDecision[] = [];
+
     for (let idx = 0; idx < subCommands.length; idx++) {
       const subCmd = subCommands[idx];
       const stepInfo = subCommands.length > 1 ? `(${idx + 1}/${subCommands.length})` : undefined;
@@ -413,7 +506,7 @@ export default function (pi: ExtensionAPI) {
         const whitelistCheck = checkWhitelist(subCmd, config);
         if (whitelistCheck.matched) {
           stats.strictApproved++;
-          decisions.push({ cmd: subCmd, type: "whitelisted" });
+          decisions.push({ cmd: subCmd, type: "whitelisted", pattern: whitelistCheck.pattern });
           continue;
         }
 
@@ -460,7 +553,7 @@ export default function (pi: ExtensionAPI) {
           currentConfig = null;
 
           stats.strictApproved++;
-          decisions.push({ cmd: subCmd, type: "whitelisted" });
+          decisions.push({ cmd: subCmd, type: "whitelisted", pattern: whitelistPatterns[0] || "" });
           continue;
         }
 
@@ -484,18 +577,29 @@ export default function (pi: ExtensionAPI) {
 
     // Show unified notification — same format for single and chain commands
     if (decisions.length > 0) {
-      const lines = decisions.map(d => {
-        const labels = {
-          approved: "✅ Approved",
-          "approved-all": "⭐ Approved all",
-          whitelisted: "📋 Whitelisted",
-        };
+      const labels = {
+        approved: "✅ Approved",
+        "approved-all": "⭐ Approved all",
+        whitelisted: "📋 Whitelisted",
+      };
+      // Guard against null theme — happens when ALL sub-commands are whitelisted
+      // and no prompt ever fired, so savedTheme was never captured.
+      // Arrow function reads savedTheme at call time, not definition time.
+      const fg = (color: string, text: string) =>
+        savedTheme ? savedTheme.fg(color, text) : text;
+      const lines: string[] = [];
+      for (const d of decisions) {
         const label = labels[d.type] || "✅ Approved";
         const cmdText = d.cmd.length > 35 ? d.cmd.slice(0, 32) + "..." : d.cmd;
-        return `  ${label}: ${savedTheme.fg("accent", cmdText)}`;
-      }).join("\n");
+        const prefix = `  ${label}: `;
+        lines.push(`${prefix}${savedTheme.fg("accent", cmdText)}`);
+        if (d.pattern) {
+          const indent = " ".repeat(prefix.length - 9);
+          lines.push(`${indent}pattern: ${savedTheme.fg("mdLink", `${d.pattern}`)}`);
+        }
+      }
       ctx.ui.notify(
-        `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} actions:\n${lines}`,
+        `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} actions:\n${lines.join("\n")}`,
         "info",
       );
     }
@@ -509,6 +613,7 @@ export default function (pi: ExtensionAPI) {
   // ===========================================================================
 
   pi.on("tool_call", async (event, ctx) => {
+    if (defenderDisabled) return undefined;
     if (event.toolName !== "write" && event.toolName !== "edit") return undefined;
 
     // Block all file writes/edits when execution is aborted
@@ -542,7 +647,10 @@ export default function (pi: ExtensionAPI) {
   // ===========================================================================
 
   pi.on("tool_call", async (event, ctx) => {
+    if (defenderDisabled) return undefined;
     if (!isToolCallEventType("read", event)) return undefined;
+
+    // Reads are allowed during abort for diagnostics, but skip if defender is disabled
 
     const path = event.input.path;
     if (!path) return undefined;
@@ -570,11 +678,14 @@ export default function (pi: ExtensionAPI) {
       const config = getConfig(ctx.cwd);
       const abortStatus = aborted ? " ❌ ABORTED" : "";
       const approveCount = sessionApprovedPatterns.length;
-      const strictStatus = strictMode
-        ? `🔒 ACTIVE (default)${approveCount > 0 ? ` (${approveCount} session-approved)` : ""}${abortStatus}`
-        : aborted
-          ? `❌ ABORTED (use /defender:strict off to reset)`
-          : "⚪ OFF (non-default)";
+      const disabledStatus = defenderDisabled ? " ⚪ DISABLED (skipping all tool_call analysis)" : "";
+      const strictStatus = defenderDisabled
+        ? `⚪ DISABLED (use /defender:strict on to re-enable)`
+        : strictMode
+          ? `🔒 ACTIVE (default)${approveCount > 0 ? ` (${approveCount} session-approved)` : ""}${abortStatus}`
+          : aborted
+            ? `❌ ABORTED (use /defender:strict off to reset)`
+            : "⚪ OFF (non-default)";
       ctx.ui.notify(
         `🛡️ Defender Stats\n` +
         `  Allowed: ${stats.allowed} | Blocked: ${stats.blocked} | Asked: ${stats.asked}\n` +
@@ -609,10 +720,11 @@ export default function (pi: ExtensionAPI) {
       const mode = args.toLowerCase().trim();
 
       if (mode === "on") {
-        if (strictMode) {
+        if (strictMode && !defenderDisabled) {
           ctx.ui.notify("🛡️🔒 Strict Mode is already ACTIVE (default)", "warning");
         } else {
           strictMode = true;
+          defenderDisabled = false;
           sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
@@ -627,6 +739,7 @@ export default function (pi: ExtensionAPI) {
         if (!strictMode && !aborted) {
           ctx.ui.notify("🛡️ Strict Mode is already OFF (non-default)", "warning");
         } else {
+          defenderDisabled = false;
           strictMode = false;
           sessionApprovedPatterns.length = 0;
           aborted = false;
@@ -649,6 +762,7 @@ export default function (pi: ExtensionAPI) {
         } else {
           // Turning ON
           strictMode = true;
+          defenderDisabled = false;
           sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
@@ -670,6 +784,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", async () => {
     currentConfig = null;
     aborted = false;
+    defenderDisabled = false;
     sessionApprovedPatterns.length = 0;
   });
 }

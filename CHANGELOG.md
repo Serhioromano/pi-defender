@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [v1.3.3]
+## [v1.4.0]
 
 - `change` - **Whitelist patterns now extract only tool identity**: When whitelisting a command via 📋 "Allow & Whitelist", the generated regex pattern now strips all parameters, flags, paths, and directories — keeping only the base command and subcommand. Previously the entire literal command was escaped as-is. Examples:
   - `find . -name "*.ts"` → `^find\b` (was: `find \. -name "\*\.ts"`)
@@ -11,6 +11,11 @@ All notable changes to Pi Defender will be documented in this file.
   - Meta-commands (git, npm, npx, docker, kubectl, etc.) include subcommand; simple commands (find, grep, ls, cat, curl) include only the base command
   - Command names with path prefixes (`/usr/bin/curl`) are reduced to basename (`curl`)
 - `add` - **Tokenize bash commands** respecting single/double quotes for reliable tool identity extraction
+- `improve` - **Whitelist notification shows regex pattern** underneath each whitelisted command, indented and in `mdLink` color
+- `add` - **Session-start protection selector**: On every new session, a selector appears asking: 🔒 Strict Mode ON, 🛡️ Patterns only, or ⚪ Disable Defender. Captures TUI theme early → fixes missing colors in whitelist-only notifications.
+- `add` - **Disable Defender** option: selecting ⚪ Disable Defender sets `defenderDisabled = true`, which skips ALL `tool_call` analysis entirely (bash, write, edit, read) — no checks, no notifications. Re-enable with `/defender:strict on`.
+- `fix` - **Session-start selector keyboard**: Fixed `handleKey` → `handleInput` (correct Pi TUI API) + added `_tui.requestRender()` for arrow key navigation.
+- `fix` - **Null theme crash** when ALL commands in a chain are whitelisted (no prompt fires → `savedTheme` stays null). Theme wrappers now defer lookup to call time via arrow functions.
 
 ## [v1.3.2]
 

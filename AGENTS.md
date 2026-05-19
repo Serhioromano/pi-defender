@@ -48,7 +48,10 @@ pi.on("tool_call") 3 handlers registered:
   3. Read handler       → checkFileAccess() → path-based block (zeroAccess only)
                          Reads allowed during abort for diagnostics
 
-pi.on("session_start") → shows "Defender vX.Y.Z active 🔒 Strict Mode ON" notification
+pi.on("session_start") → shows protection-level selector:
+    🔒 Strict Mode ON (default) | 🛡️ Patterns only | ⚪ Disable Defender
+    Also captures TUI theme early — fixes missing colors in whitelist-only
+    notifications where no prompt ever fires.
 pi.on("session_shutdown") → clears cached config, aborted flag, session-approved patterns
 ```
 
