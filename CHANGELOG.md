@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [v1.5.0]
+## [v1.6.0]
 
 - `add` - **Config table on session start**: The session-start notification now shows a Unicode box-drawing table with per-file rule counts instead of a single-line summary. The table breaks down which rules come from which source:
   - **`.pi/patterns.yaml`** — essential rules (shipped, overwritten on install)
