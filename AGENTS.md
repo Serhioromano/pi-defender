@@ -112,7 +112,7 @@ counts are highlighted in accent color. `index.ts` passes `savedTheme.fg.bind(sa
 ### Whitelist (config.ts)
 
 - **checkWhitelist(command, config)** → `{ matched, pattern }` — tests command against all `strictModeWhiteList` regex patterns
-- **generateWhitelistPattern(command)** — extracts tool identity (base command + subcommand for meta-tools like git, npm, npx, docker), strips all parameters/flags/paths/directories, tokenizes respecting quotes, reduces path-prefixed commands to basename, wraps in `^...\b`. For `npm run`/`bun run`/`yarn run`/`pnpm run`, generates a flag-tolerant 3-level pattern (e.g. `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b`) — not all run commands are equally safe, and flags like `--if-present`/`-s` between `run` and the script name are tolerated.
+- **generateWhitelistPattern(command)** — extracts tool identity (base command + subcommand for meta-tools like git, npm, npx, docker), strips all parameters/flags/paths/directories, tokenizes respecting quotes, reduces path-prefixed commands to basename, wraps in `^...\b`. For `npm run`/`bun run`/`yarn run`/`pnpm run`, generates a flag-tolerant 3-level pattern (e.g. `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b`). Returns empty string when no script name is found — never falls back to `^npm run\b` because that would approve ALL run commands.
 - **generateWhitelistPatterns(command)** — splits chained commands and applies `generateWhitelistPattern` to each
 - **addPatternToWhitelist(cwd, pattern)** — reads/creates `.pi/defender.yaml`, appends pattern to `strictModeWhiteList`, writes back. Returns `{ added, reason }`. Auto-creates `.pi/` dir and `defender.yaml` as needed. NEVER writes to `patterns.yaml` (which is overwritten on install).
 

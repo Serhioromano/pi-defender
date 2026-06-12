@@ -4,12 +4,10 @@ All notable changes to Pi Defender will be documented in this file.
 
 ## [v1.6.2]
 
-- `add` - **3-level whitelist patterns for `npm run` / `bun run`**: `generateWhitelistPattern` now captures the script name when the sub-command is `run`, with a flag-tolerant gap. Previously `npm run build` generated `^npm run\b` (2-level), now it generates `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b` — because not all `run` commands are equally safe. Flags between `run` and the script (like `--if-present`, `-s`, `--silent`) are handled gracefully. Applies to `npm`, `yarn`, `pnpm`, and `bun`.
+- `add` - **3-level whitelist patterns for `npm run` / `bun run` with flag-tolerant gap**: `generateWhitelistPattern` now captures the script name when the sub-command is `run`, with a flag-tolerant gap between `run` and the script name. Previously `npm run build` generated `^npm run\b` (2-level), now it generates `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b`. **No fallback** — `npm run` (without a script name) returns empty string, because `^npm run\b` would auto-approve ALL run commands. Flags like `--if-present`, `-s`, `--silent` between `run` and the script are tolerated. Applies to `npm`, `yarn`, `pnpm`, and `bun`.
   - `npm run build` → `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b`
   - `npm run --if-present build` → same pattern (flags tolerated)
-  - `npm run -s build` → same pattern
-  - `npm run` → `^npm run\b` (fallback when no script name)
-  - `npm install` → `^npm install\b` (unchanged — not a `run` sub-command)
+  - `npm run` → `""` (no pattern — would be dangerous)
 
 ## [v1.6.1]
 

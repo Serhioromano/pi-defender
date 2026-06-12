@@ -314,7 +314,7 @@ When strict mode prompts you for a command you trust (like `npm test` or `git st
   - `find . -name "*.ts"` → `^find\b`
   - `git diff HEAD~1` → `^git diff\b`
   - `npx tsc --noEmit` → `^npx tsc\b`
-  - `npm run build` → `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b` (3-level with flag-tolerant gap)
+  - `npm run build` → `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b` (3-level, flag-tolerant — never generates `^npm run\b`)
   - `grep -n "pat" file` → `^grep\b`
   - `ls -la /tmp` → `^ls\b`
 - The `^...\b` anchors ensure precise matching: `^find\b` matches `find` but not `findmnt` or `find . -name`

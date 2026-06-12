@@ -528,7 +528,8 @@ const RUN_COMMANDS = new Set(["npm", "yarn", "pnpm", "bun"]);
  *   "npx tsc --noEmit"      → "^npx tsc\\b"
  *   "npm run build"         → "^npm run(\\s+--?[a-zA-Z][\\w-]*)*\\s+build\\b"
  *   "npm run --if-present build" → "^npm run(\\s+--?[a-zA-Z][\\w-]*)*\\s+build\\b"
- *   "npm run"               → "^npm run\\b"
+ *   "npm run"               → "" (no fallback — ^npm run\b would match ALL run commands)
+ *   "bun run"               → ""
  *   "bun run dev"           → "^bun run(\\s+--?[a-zA-Z][\\w-]*)*\\s+dev\\b"
  *   "npm install"           → "^npm install\\b"
  *   "grep -n 'pat' file"    → "^grep\\b"
@@ -554,7 +555,10 @@ export function generateWhitelistPattern(command: string): string {
       // For run-commands (npm, yarn, pnpm, bun), capture the script name too.
       // Scan past flags (--if-present, -s, --watch, etc.) to find the script.
       // npm run --if-present build → ^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b
-      if (RUN_COMMANDS.has(baseCmd) && sub === "run" && tokens.length > 2) {
+      //
+      // IMPORTANT: never generate ^npm run\b as a fallback — it would
+      // auto-approve ALL run commands, defeating the purpose.
+      if (RUN_COMMANDS.has(baseCmd) && sub === "run") {
         // Find the first non-flag token after "run" — that's the script name
         let scriptIdx = -1;
         for (let i = 2; i < tokens.length; i++) {
@@ -569,6 +573,9 @@ export function generateWhitelistPattern(command: string): string {
           const escapedScript = script.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           return `^${escapedBase} run(\\s+--?[a-zA-Z][\\w-]*)*\\s+${escapedScript}\\b`;
         }
+        // No script name found — return empty to prevent generating
+        // ^npm run\b which would match all run commands.
+        return "";
       }
     }
   }
@@ -588,7 +595,9 @@ export function generateWhitelistPattern(command: string): string {
  *   → ["^git diff\\b", "^npm run(\\s+--?[a-zA-Z][\\w-]*)*\\s+build\\b"]
  */
 export function generateWhitelistPatterns(command: string): string[] {
-  return splitChainCommands(command).map(cmd => generateWhitelistPattern(cmd));
+  return splitChainCommands(command)
+    .map(cmd => generateWhitelistPattern(cmd))
+    .filter(p => p.length > 0);
 }
 
 /**
