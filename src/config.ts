@@ -20,6 +20,23 @@ export interface Config {
   strictModeWhiteList: string[];
 }
 
+/** Per-file source tracking — what each patterns.yaml contributed. */
+export interface FileSource {
+  displayPath: string;
+  found: boolean;
+  patternCount: number;
+  zeroAccessCount: number;
+  readOnlyCount: number;
+  noDeleteCount: number;
+  whitelistCount: number;
+}
+
+/** Merged config + per-file sources for display. */
+export interface LoadedConfig {
+  config: Config;
+  sources: FileSource[];
+}
+
 // =============================================================================
 // PATTERN TUPLES — [regex_template, operation_description]
 // =============================================================================
@@ -85,22 +102,34 @@ export const NO_DELETE_BLOCKED: PatternTuple[] = DELETE_PATTERNS;
 // =============================================================================
 
 function getConfigPaths(cwd: string): string[] {
-  const paths: string[] = [];
+  return [
+    // 1. Project-local essential rules (shipped, overwritten on install)
+    join(cwd, ".pi", "patterns.yaml"),
+    // 2. Global essential rules (shipped, overwritten on install)
+    join(homedir(), ".pi", "patterns.yaml"),
+    // 3. Project-local user rules (never overwritten)
+    join(cwd, ".pi", "defender.yaml"),
+    // 4. Global user rules (never overwritten)
+    join(homedir(), ".pi", "defender.yaml"),
+  ];
+}
 
-  paths.push(join(cwd, ".pi", "patterns.yaml"));
+/** Human-friendly label for a config file path. */
+function displayPathFor(configPath: string, cwd: string): string {
+  const localPatterns = join(cwd, ".pi", "patterns.yaml");
+  const globalPatterns = join(homedir(), ".pi", "patterns.yaml");
+  const localDefender = join(cwd, ".pi", "defender.yaml");
+  const globalDefender = join(homedir(), ".pi", "defender.yaml");
+  if (configPath === localPatterns) return ".pi/patterns.yaml";
+  if (configPath === globalPatterns) return "~/.pi/patterns.yaml";
+  if (configPath === localDefender) return ".pi/defender.yaml";
+  if (configPath === globalDefender) return "~/.pi/defender.yaml";
+  return configPath; // fallback
+}
 
-  // 2. Global user config (~/.pi/defender/patterns.yaml)
-  paths.push(join(homedir(), ".pi", "patterns.yaml"));
-  
-  // 3. Bundled defaults shipped with the package
-  // @ts-ignore — __dirname is CJS global
-  if (typeof __dirname !== "undefined") {
-    paths.push(join(__dirname, "patterns.yaml"));
-  }
-  paths.push(join(cwd, "src", "patterns.yaml"));
-  paths.push(join(cwd, "node_modules", "pi-defender", "src", "patterns.yaml"));
-
-  return paths;
+/** Empty config sentinel. */
+function emptyConfig(): Config {
+  return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [], strictModeWhiteList: [] };
 }
 
 function parseConfigFile(path: string): Config | null {
@@ -129,22 +158,35 @@ function mergeConfigs(...configs: Config[]): Config {
   };
 }
 
-export function loadConfig(cwd: string): Config {
+export function loadConfig(cwd: string): LoadedConfig {
   const configPaths = getConfigPaths(cwd);
   const configs: Config[] = [];
+  const fileSources: FileSource[] = [];
 
   for (const configPath of configPaths) {
-    if (existsSync(configPath)) {
-      const parsed = parseConfigFile(configPath);
-      if (parsed) configs.push(parsed);
+    const found = existsSync(configPath);
+    let cfg: Config | null = null;
+
+    if (found) {
+      cfg = parseConfigFile(configPath);
+      if (cfg) configs.push(cfg);
     }
+
+    const safe = cfg ?? emptyConfig();
+    fileSources.push({
+      displayPath: displayPathFor(configPath, cwd),
+      found: found && cfg !== null,
+      patternCount: safe.bashToolPatterns.length,
+      zeroAccessCount: safe.zeroAccessPaths.length,
+      readOnlyCount: safe.readOnlyPaths.length,
+      noDeleteCount: safe.noDeletePaths.length,
+      whitelistCount: safe.strictModeWhiteList.length,
+    });
   }
 
-  if (configs.length === 0) {
-    return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [], strictModeWhiteList: [] };
-  }
+  const merged = configs.length > 0 ? mergeConfigs(...configs) : emptyConfig();
 
-  return mergeConfigs(...configs);
+  return { config: merged, sources: fileSources };
 }
 
 // =============================================================================
@@ -514,7 +556,7 @@ export function generateWhitelistPatterns(command: string): string[] {
 }
 
 /**
- * Add a single pattern to the strictModeWhiteList in the project's .pi/patterns.yaml.
+ * Add a single pattern to the strictModeWhiteList in the project's .pi/defender.yaml.
  * Creates the file and directory if they don't exist.
  * Does NOT duplicate existing patterns.
  */
@@ -524,13 +566,13 @@ export function addPatternToWhitelist(cwd: string, pattern: string): { added: bo
 }
 
 /**
- * Add multiple patterns to the strictModeWhiteList in the project's .pi/patterns.yaml.
+ * Add multiple patterns to the strictModeWhiteList in the project's .pi/defender.yaml.
  * Skips duplicates — only truly new patterns are counted as "added".
  * Creates the file and directory if they don't exist.
  */
 export function addPatternsToWhitelist(cwd: string, patterns: string[]): { added: number; skipped: number; reason: string } {
   const piDir = join(cwd, ".pi");
-  const patternsPath = join(piDir, "patterns.yaml");
+  const defenderPath = join(piDir, "defender.yaml");
 
   // Create .pi directory if needed
   if (!existsSync(piDir)) {
@@ -543,9 +585,9 @@ export function addPatternsToWhitelist(cwd: string, patterns: string[]): { added
 
   // Read or initialize the file
   let raw: Record<string, unknown>;
-  if (existsSync(patternsPath)) {
+  if (existsSync(defenderPath)) {
     try {
-      const content = readFileSync(patternsPath, "utf-8");
+      const content = readFileSync(defenderPath, "utf-8");
       raw = parseYaml(content) as Record<string, unknown>;
     } catch {
       raw = {};
@@ -577,11 +619,175 @@ export function addPatternsToWhitelist(cwd: string, patterns: string[]): { added
   raw.strictModeWhiteList = existingList;
   try {
     const yamlStr = stringifyYaml(raw, { lineWidth: 120 });
-    writeFileSync(patternsPath, yamlStr, "utf-8");
+    writeFileSync(defenderPath, yamlStr, "utf-8");
     return { added, skipped, reason: "" };
   } catch (e) {
     return { added: 0, skipped: 0, reason: `Failed to write patterns: ${String(e)}` };
   }
+}
+
+// =============================================================================
+// CONFIG DEPLOYMENT — copy bundled defaults to .pi on first use
+// =============================================================================
+
+/**
+ * Ensure the global patterns.yaml exists. If not, copy the bundled defaults
+ * from the package installation. Idempotent — never overwrites an existing file.
+ *
+ * This handles the case where pi-defender is installed manually (not via npm)
+ * and the postinstall script didn't run.
+ */
+export function ensurePatternsConfig(cwd: string): { deployed: boolean; path: string } {
+  const globalPath = join(homedir(), ".pi", "patterns.yaml");
+  const localPath = join(cwd, ".pi", "patterns.yaml");
+
+  // Find the bundled patterns.yaml source
+  const sourceCandidates: string[] = [];
+  // @ts-ignore — __dirname is CJS global
+  if (typeof __dirname !== "undefined") {
+    sourceCandidates.push(join(__dirname, "patterns.yaml"));           // dist/
+  }
+  sourceCandidates.push(join(cwd, "src", "patterns.yaml"));            // dev
+  // Try node_modules resolution
+  sourceCandidates.push(
+    join(cwd, "node_modules", "pi-defender", "src", "patterns.yaml"),
+  );
+
+  let sourcePath: string | null = null;
+  for (const candidate of sourceCandidates) {
+    if (existsSync(candidate)) {
+      sourcePath = candidate;
+      break;
+    }
+  }
+
+  if (!sourcePath) return { deployed: false, path: "" };
+
+  const deployed: string[] = [];
+
+  // Deploy global if missing
+  if (!existsSync(globalPath)) {
+    const globalDir = dirname(globalPath);
+    if (!existsSync(globalDir)) mkdirSync(globalDir, { recursive: true });
+    writeFileSync(globalPath, readFileSync(sourcePath, "utf-8"), "utf-8");
+    deployed.push(globalPath);
+  }
+
+  // Deploy local if missing
+  if (!existsSync(localPath)) {
+    const localDir = dirname(localPath);
+    if (!existsSync(localDir)) mkdirSync(localDir, { recursive: true });
+    writeFileSync(localPath, readFileSync(sourcePath, "utf-8"), "utf-8");
+    deployed.push(localPath);
+  }
+
+  return {
+    deployed: deployed.length > 0,
+    path: deployed.length === 1 ? deployed[0] : deployed.join(", "),
+  };
+}
+
+// =============================================================================
+// TABLE FORMATTING — session-start notification
+// =============================================================================
+
+function padR(s: string, len: number): string {
+  if (s.length >= len) return s.slice(0, len);
+  return s + " ".repeat(len - s.length);
+}
+
+function padL(s: string, len: number): string {
+  if (s.length >= len) return s.slice(0, len);
+  return " ".repeat(len - s.length) + s;
+}
+
+const COL_SRC = 24;
+const COL_PAT = 4;
+const COL_ZERO = 5;
+const COL_RO = 6;
+const COL_ND = 5;
+const COL_WL = 5;
+
+/**
+ * Build a human-readable table showing which rules were loaded from which sources.
+ * Uses Unicode box-drawing characters for a clean table look.
+ *
+ * Sources shown:
+ *   .pi/patterns.yaml    — essential rules (shipped, overwritten on install)
+ *   ~/.pi/patterns.yaml   — essential rules (shipped, overwritten on install)
+ *   .pi/defender.yaml     — user rules (never overwritten)
+ *   ~/.pi/defender.yaml   — user rules (never overwritten)
+ */
+export function formatConfigTable(
+  loaded: LoadedConfig,
+  version: string,
+  strictMode: boolean,
+  disabled: boolean,
+): string {
+  const lines: string[] = [];
+
+  // Status header
+  const statusIcon = disabled ? "⚪" : strictMode ? "🔒" : "🛡️";
+  const statusText = disabled ? "DISABLED" : strictMode ? "Strict Mode ON" : "Patterns only";
+  lines.push(`🛡️  Pi Defender v${version}  —  ${statusIcon} ${statusText}`);
+  lines.push("");
+  lines.push("  Rules loaded:");
+
+  // Inner content width: COL_SRC + 1 + COL_PAT + 1 + COL_ZERO + 1 + COL_RO + 1 + COL_ND + 1 + COL_WL = 24+1+4+1+5+1+6+1+5+1+5 = 54
+  // Border: 2 outer spaces + left box char + dashes + right box char = 2 + 1 + 56 + 1 = 60
+  const BORDER = "─".repeat(56);
+
+  // Table top
+  lines.push(`  ┌${BORDER}┐`);
+
+  // Column header
+  const header = [
+    padR("Source", COL_SRC),
+    padL("Pat", COL_PAT),
+    padL("Zero", COL_ZERO),
+    padL("ROnly", COL_RO),
+    padL("NDel", COL_ND),
+    padL("Wlst", COL_WL),
+  ].join(" ");
+  lines.push(`  │ ${header} │`);
+  lines.push(`  ├${BORDER}┤`);
+
+  // Source rows
+  for (const src of loaded.sources) {
+    if (src.found) {
+      const row = [
+        padR(src.displayPath, COL_SRC),
+        padL(String(src.patternCount), COL_PAT),
+        padL(String(src.zeroAccessCount), COL_ZERO),
+        padL(String(src.readOnlyCount), COL_RO),
+        padL(String(src.noDeleteCount), COL_ND),
+        padL(String(src.whitelistCount), COL_WL),
+      ].join(" ");
+      lines.push(`  │ ${row} │`);
+    } else {
+      // " — not found —" is 14 chars; inner = 24+14+spaces = 54; need 54-24-14 = 16 spaces
+      const inner = padR(src.displayPath, COL_SRC) + " — not found —" + " ".repeat(16);
+      lines.push(`  │ ${inner} │`);
+    }
+  }
+
+  // Total row
+  lines.push(`  ├${BORDER}┤`);
+  const cfg = loaded.config;
+  const totalRow = [
+    padR("TOTAL (merged)", COL_SRC),
+    padL(String(cfg.bashToolPatterns.length), COL_PAT),
+    padL(String(cfg.zeroAccessPaths.length), COL_ZERO),
+    padL(String(cfg.readOnlyPaths.length), COL_RO),
+    padL(String(cfg.noDeletePaths.length), COL_ND),
+    padL(String(cfg.strictModeWhiteList.length), COL_WL),
+  ].join(" ");
+  lines.push(`  │ ${totalRow} │`);
+
+  // Table bottom
+  lines.push(`  └${BORDER}┘`);
+
+  return lines.join("\n");
 }
 
 // =============================================================================

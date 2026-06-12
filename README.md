@@ -58,6 +58,22 @@ Block ALL bash tool execution and require explicit user approval for every comma
 - **Whitelist**: Save trusted commands to `.pi/patterns.yaml` for persistent auto-approval across sessions
 - Toggle with `/defender:strict` (on|off, or no parameter to toggle)
 - Shows 🛡️🔒 badge when active
+- **Config table on session start**: Instead of a one-line summary, Pi Defender now displays a table breaking down which rules come from which file:
+  ```
+  🛡️  Pi Defender v1.5.0  —  🔒 Strict Mode ON
+
+    Rules loaded:
+    ┌────────────────────────────────────────────────────────┐
+    │ Source                    Pat  Zero  ROnly  NDel  Wlst │
+    ├────────────────────────────────────────────────────────┤
+    │ .pi/patterns.yaml          22    23     24     9     0 │
+    │ ~/.pi/patterns.yaml     — not found —                 │
+    │ .pi/defender.yaml           0     0      0     0     5 │
+    │ ~/.pi/defender.yaml      — not found —                 │
+    ├────────────────────────────────────────────────────────┤
+    │ TOTAL (merged)             22    23     24     9     5 │
+    └────────────────────────────────────────────────────────┘
+  ```
 
 ### 🎯 Protection targets
 - **Bash tool**: command patterns + path references in commands
@@ -95,12 +111,42 @@ npm install
 
 ## Configuration
 
-Defender loads configuration in this order and merges it:
+Defender loads rules from 4 files (all optional, all merged):
+
+| File | Overwritten on install? | Purpose |
+|------|--------------------------|---------|
+| `.pi/patterns.yaml` | ✅ Yes | Essential security rules (shipped) |
+| `~/.pi/patterns.yaml` | ✅ Yes | Essential security rules (global) |
+| `.pi/defender.yaml` | ❌ **Never** | Your custom patterns + whitelist |
+| `~/.pi/defender.yaml` | ❌ **Never** | Your custom patterns + whitelist (global) |
+
+**On session start**, a table shows exactly which files were found and what each contributed:
 
 ```
-~/.pi/patterns.yaml     # Global config (auto-deployed on first load)
-.pi/patterns.yaml       # Project config (alternate name)
+🛡️  Pi Defender v1.5.0  —  🔒 Strict Mode ON
+
+  Rules loaded:
+  ┌────────────────────────────────────────────────────────┐
+  │ Source                    Pat  Zero  ROnly  NDel  Wlst │
+  ├────────────────────────────────────────────────────────┤
+  │ .pi/patterns.yaml          22    23     24     9     0 │
+  │ ~/.pi/patterns.yaml     — not found —                 │
+  │ .pi/defender.yaml           0     0      0     0     5 │
+  │ ~/.pi/defender.yaml      — not found —                 │
+  ├────────────────────────────────────────────────────────┤
+  │ TOTAL (merged)             22    23     24     9     5 │
+  └────────────────────────────────────────────────────────┘
 ```
+
+**Column legend:**
+
+| Column | Meaning |
+|--------|---------|
+| **Pat** | `bashToolPatterns` — dangerous command patterns |
+| **Zero** | `zeroAccessPaths` — no read/write/delete allowed |
+| **ROnly** | `readOnlyPaths` — read OK, write/edit blocked |
+| **NDel** | `noDeletePaths` — read/write/edit OK, delete blocked |
+| **Wlst** | `strictModeWhiteList` — auto-approved commands (your whitelist) |
 
 ### Initialize project config
 

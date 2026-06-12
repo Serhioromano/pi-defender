@@ -17,22 +17,25 @@ src/
 
 ### Loading chain
 
-All `patterns.yaml` files from every location are found, parsed, and merged together
-(arrays are concatenated). No single file overrides another — all contribute.
-
-On first session start, `ensureGlobalConfig()` deploys the bundled defaults to
-`~/.pi/pi-defender/patterns.yaml` if it doesn't already exist (idempotent).
-The bundled defaults are embedded as a `DEFAULT_PATTERNS_YAML` template literal in
-`config.ts` — this avoids the `dist/` compilation issue where `src/patterns.yaml`
-is not copied by tsc.
+Only `.pi/` directories are read at runtime — never `src/` or `dist/`.
 
 ```
-~/.pi/patterns.yaml ────┐
-.pi/patterns.yaml ──────┤
-                        │
-                        └──→ config.ts:loadConfig(cwd) ──→ getConfig()
-                              (all found, merged together)
+.pi/patterns.yaml ──────┐ essential rules (shipped, overwritten on install)
+~/.pi/patterns.yaml ────┤
+.pi/defender.yaml ──────┤ user rules + whitelist (NEVER overwritten)
+~/.pi/defender.yaml ────┘
+                         │
+                         └──→ config.ts:loadConfig(cwd) ──→ getConfig()
+                              (all 4 merged together)
 ```
+
+On first session start, `ensurePatternsConfig(cwd)` copies the bundled
+`src/patterns.yaml` defaults to `~/.pi/patterns.yaml` and `.pi/patterns.yaml`
+if they don't already exist (idempotent). The `postinstall` script also
+copies to `~/.pi/patterns.yaml` — always overwrites on install/update.
+
+User whitelist entries are saved to `.pi/defender.yaml` (project-local) via
+`addPatternsToWhitelist()`. This file is NEVER overwritten on install.
 
 ### Event flow
 
@@ -48,8 +51,13 @@ pi.on("tool_call") 3 handlers registered:
   3. Read handler       → checkFileAccess() → path-based block (zeroAccess only)
                          Reads allowed during abort for diagnostics
 
-pi.on("session_start") → shows protection-level selector:
+pi.on("session_start") → runs `ensurePatternsConfig` (idempotent deploy)
+    → shows protection-level selector:
     🔒 Strict Mode ON (default) | 🛡️ Patterns only | ⚪ Disable Defender
+    After selection, displays a config table breaking down which rules
+    come from which source (.pi/patterns.yaml, ~/.pi/patterns.yaml,
+    .pi/defender.yaml, ~/.pi/defender.yaml). Uses Unicode box-drawing
+    characters: ┌─...─┐ ├─...─┤ └─...─┘ with columns: Pat, Zero, ROnly, NDel, Wlst.
     Also captures TUI theme early — fixes missing colors in whitelist-only
     notifications where no prompt ever fires.
 pi.on("session_shutdown") → clears cached config, aborted flag, session-approved patterns
@@ -74,12 +82,35 @@ pi.on("session_shutdown") → clears cached config, aborted flag, session-approv
 
 Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
 
+### Config loading (config.ts:loadConfig)
+
+`loadConfig(cwd)` checks 4 files only:
+- `.pi/patterns.yaml` — essential rules (shipped, overwritten on install/update)
+- `~/.pi/patterns.yaml` — essential rules (shipped, overwritten on install/update)
+- `.pi/defender.yaml` — user rules + whitelist (NEVER overwritten)
+- `~/.pi/defender.yaml` — user rules + whitelist (NEVER overwritten)
+
+Returns `LoadedConfig`:
+- `.config` — merged `Config` from all found sources
+- `.sources` — per-file `FileSource[]` with `displayPath`, `found`, and per-category counts
+
+`ensurePatternsConfig(cwd)` copies the bundled defaults to global and local
+`patterns.yaml` if missing (idempotent). Called on session_start and by
+`/defender:patterns` command.
+
+### Table formatting (config.ts:formatConfigTable)
+
+`formatConfigTable(loaded, version, strictMode, disabled)` builds a Unicode
+box-drawing table with columns: Source, Pat, Zero, ROnly, NDel, Wlst.
+Shows all 4 sources — found files show per-category counts, unfound files
+show "— not found —". Used by session_start, /defender:reload, and /defender:status.
+
 ### Whitelist (config.ts)
 
 - **checkWhitelist(command, config)** → `{ matched, pattern }` — tests command against all `strictModeWhiteList` regex patterns
 - **generateWhitelistPattern(command)** — extracts tool identity (base command + subcommand for meta-tools like git, npm, npx, docker), strips all parameters/flags/paths/directories, tokenizes respecting quotes, reduces path-prefixed commands to basename, wraps in `^...\b`
 - **generateWhitelistPatterns(command)** — splits chained commands and applies `generateWhitelistPattern` to each
-- **addPatternToWhitelist(cwd, pattern)** — reads/creates `.pi/patterns.yaml`, appends pattern to `strictModeWhiteList`, writes back. Returns `{ added, reason }`. Auto-creates `.pi/` dir and file as needed.
+- **addPatternToWhitelist(cwd, pattern)** — reads/creates `.pi/defender.yaml`, appends pattern to `strictModeWhiteList`, writes back. Returns `{ added, reason }`. Auto-creates `.pi/` dir and `defender.yaml` as needed. NEVER writes to `patterns.yaml` (which is overwritten on install).
 
 ### Session-approved patterns (index.ts)
 
@@ -200,15 +231,17 @@ A **150ms delay** runs between sub-command selectors to prevent TUI race conditi
 
 | Command | Handler |
 |---|---|
-| `/defender:status` | Shows stats + strict mode state + session-approved count |
-| `/defender:reload` | Clears cached config, reloads from YAML |
-| `/defender:patterns` | Copies bundled YAML to `.pi/defender/patterns.yaml` |
+| `/defender:status` | Shows stats + config table |
+| `/defender:reload` | Clears cached config, reloads from YAML, shows table |
+| `/defender:patterns` | Copies bundled essential patterns to `.pi/patterns.yaml` (idempotent) |
 | `/defender:strict [on\|off]` | Toggles strict mode (ON by default, resets session-approved/aborted) |
 
 ## When editing patterns
 
 1. Edit `src/patterns.yaml` — bundled defaults shipped with the package
-2. Run `/defender:reload` to apply changes in-session
+2. The file is deployed to `.pi/` on install and via `/defender:patterns`
+3. Run `/defender:reload` to apply changes in-session
+4. User customizations go in `.pi/defender.yaml` (never overwritten on update)
 
 ## Pi API surface used
 

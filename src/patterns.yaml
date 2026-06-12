@@ -1,11 +1,16 @@
 # =============================================================================
-# Pi Defender — Security Patterns
+# Pi Defender — Essential Security Patterns (shipped with package)
 # =============================================================================
 #
-# Edit this file to customize which operations are blocked.
-# Each extension loads this file from:
-#   1. .pi/defender/patterns.yaml  (project-local)
-#   2. ~/.pi/defender/patterns.yaml  (global fallback)
+# This file is copied to ~/.pi/patterns.yaml on install and .pi/patterns.yaml
+# via /defender:patterns — it contains the essential protection rules.
+# These files are overwritten on every install/update.
+#
+# User customizations (additional patterns, whitelist entries) go in:
+#   1. .pi/defender.yaml  (project-local, NEVER overwritten)
+#   2. ~/.pi/defender.yaml  (global, NEVER overwritten)
+#
+# All four files are merged together at load time.
 #
 # -----------------------------------------------------------------------------
 # BASH TOOL PATTERNS — Matched against Bash tool commands

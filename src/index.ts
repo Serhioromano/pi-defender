@@ -24,7 +24,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, decodeKittyPrintable, truncateToWidth } from "@earendil-works/pi-tui";
-import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, type Config } from "./config";
+import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, formatConfigTable, ensurePatternsConfig, type Config, type LoadedConfig } from "./config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -42,7 +42,7 @@ const DEFENDER_VERSION: string = (() => {
 // =============================================================================
 
 export default function (pi: ExtensionAPI) {
-  let currentConfig: Config | null = null;
+  let currentLoadedConfig: LoadedConfig | null = null;
   let stats = { blocked: 0, asked: 0, allowed: 0, strictBlocked: 0, strictApproved: 0, strictApprovedAll: 0 };
   let strictMode = true; // ON by default
   const sessionApprovedPatterns: string[] = []; // session-scoped approve-all patterns (regex-escaped commands)
@@ -51,9 +51,13 @@ export default function (pi: ExtensionAPI) {
   let savedTheme: any = null;
 
   function getConfig(cwd: string): Config {
-    if (currentConfig) return currentConfig;
-    currentConfig = loadConfig(cwd);
-    return currentConfig;
+    return getLoadedConfig(cwd).config;
+  }
+
+  function getLoadedConfig(cwd: string): LoadedConfig {
+    if (currentLoadedConfig) return currentLoadedConfig;
+    currentLoadedConfig = loadConfig(cwd);
+    return currentLoadedConfig;
   }
 
   // ===========================================================================
@@ -61,13 +65,16 @@ export default function (pi: ExtensionAPI) {
   // ===========================================================================
 
   pi.on("session_start", async (_event, ctx) => {
-    const config = getConfig(ctx.cwd);
+    // Deploy bundled defaults to .pi if missing (idempotent)
+    ensurePatternsConfig(ctx.cwd);
+
+    const loaded = getLoadedConfig(ctx.cwd);
 
     if (!ctx.hasUI || typeof ctx.ui?.custom !== "function") {
-      // No UI — default to strict mode ON with plain notification
+      // No UI — default to strict mode ON with table notification
       strictMode = true;
       ctx.ui.notify(
-        `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+        formatConfigTable(loaded, DEFENDER_VERSION, true, false),
         "info",
       );
       return;
@@ -143,19 +150,22 @@ export default function (pi: ExtensionAPI) {
       if (choice === "off") {
         strictMode = false;
         defenderDisabled = true;
-        ctx.ui.notify("🛡️ Defender DISABLED — skipping all tool_call analysis. Use /defender:strict to re-enable.", "warning");
+        ctx.ui.notify(
+          formatConfigTable(loaded, DEFENDER_VERSION, false, true),
+          "warning",
+        );
       } else if (choice === "patterns") {
         strictMode = false;
         defenderDisabled = false;
         ctx.ui.notify(
-          `🛡️ Patterns-only mode active (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only). Use /defender:strict on for full protection.`,
+          formatConfigTable(loaded, DEFENDER_VERSION, false, false),
           "info",
         );
       } else {
         strictMode = true;
         defenderDisabled = false;
         ctx.ui.notify(
-          `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+          formatConfigTable(loaded, DEFENDER_VERSION, true, false),
           "info",
         );
       }
@@ -163,7 +173,7 @@ export default function (pi: ExtensionAPI) {
       // Fallback if custom UI fails
       strictMode = true;
       ctx.ui.notify(
-        `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+        formatConfigTable(loaded, DEFENDER_VERSION, true, false),
         "info",
       );
     }
@@ -550,7 +560,7 @@ export default function (pi: ExtensionAPI) {
           const addResult = addPatternsToWhitelist(ctx.cwd, whitelistPatterns);
 
           // Reload config to pick up new whitelist entries
-          currentConfig = null;
+          currentLoadedConfig = null;
 
           stats.strictApproved++;
           decisions.push({ cmd: subCmd, type: "whitelisted", pattern: whitelistPatterns[0] || "" });
@@ -675,10 +685,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("defender:status", {
     description: "Show defender statistics and active configuration",
     handler: async (_args, ctx) => {
-      const config = getConfig(ctx.cwd);
+      const loaded = getLoadedConfig(ctx.cwd);
+      const config = loaded.config;
       const abortStatus = aborted ? " ❌ ABORTED" : "";
       const approveCount = sessionApprovedPatterns.length;
-      const disabledStatus = defenderDisabled ? " ⚪ DISABLED (skipping all tool_call analysis)" : "";
       const strictStatus = defenderDisabled
         ? `⚪ DISABLED (use /defender:strict on to re-enable)`
         : strictMode
@@ -687,16 +697,12 @@ export default function (pi: ExtensionAPI) {
             ? `❌ ABORTED (use /defender:strict off to reset)`
             : "⚪ OFF (non-default)";
       ctx.ui.notify(
-        `🛡️ Defender Stats\n` +
-        `  Allowed: ${stats.allowed} | Blocked: ${stats.blocked} | Asked: ${stats.asked}\n` +
-        `  Strict mode: ${strictStatus}\n` +
-        `  Strict: ${stats.strictApproved} approved | ${stats.strictBlocked} blocked | ${stats.strictApprovedAll} approve-all\n` +
-        `  Session-approved patterns: ${sessionApprovedPatterns.length}\n` +
-        `  Bash patterns: ${config.bashToolPatterns.length}\n` +
-        `  Whitelist patterns: ${config.strictModeWhiteList.length}\n` +
-        `  Zero-access paths: ${config.zeroAccessPaths.length}\n` +
-        `  Read-only paths: ${config.readOnlyPaths.length}\n` +
-        `  No-delete paths: ${config.noDeletePaths.length}`,
+        `🛡️  Defender Stats\n` +
+        `  Allowed: ${stats.allowed} · Blocked: ${stats.blocked} · Asked: ${stats.asked}\n` +
+        `  Strict: ${stats.strictApproved} approved · ${stats.strictBlocked} blocked · ${stats.strictApprovedAll} approve-all · ${sessionApprovedPatterns.length} session-approved\n` +
+        `  Mode: ${strictStatus}\n` +
+        `\n` +
+        formatConfigTable(loaded, DEFENDER_VERSION, strictMode, defenderDisabled),
         "info",
       );
     },
@@ -705,12 +711,41 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("defender:reload", {
     description: "Reload defender configuration from YAML",
     handler: async (_args, ctx) => {
-      currentConfig = null;
-      const config = getConfig(ctx.cwd);
+      currentLoadedConfig = null;
+      const loaded = getLoadedConfig(ctx.cwd);
       ctx.ui.notify(
-        `🛡️ Defender v${DEFENDER_VERSION} active 🔒 Strict Mode ON (${config.bashToolPatterns.length} patterns, ${config.zeroAccessPaths.length} zero-access, ${config.readOnlyPaths.length} read-only)`,
+        formatConfigTable(loaded, DEFENDER_VERSION, strictMode, defenderDisabled),
         "info",
       );
+    },
+  });
+
+  pi.registerCommand("defender:patterns", {
+    description: "Copy bundled essential patterns to project's .pi/patterns.yaml (idempotent)",
+    handler: async (_args, ctx) => {
+      const result = ensurePatternsConfig(ctx.cwd);
+      if (result.deployed) {
+        ctx.ui.notify(
+          `🛡️ Deployed essential patterns to: ${result.path}. Reloading config...`,
+          "info",
+        );
+        currentLoadedConfig = null;
+        const loaded = getLoadedConfig(ctx.cwd);
+        ctx.ui.notify(
+          formatConfigTable(loaded, DEFENDER_VERSION, strictMode, defenderDisabled),
+          "info",
+        );
+      } else if (result.path) {
+        ctx.ui.notify(
+          `🛡️ Patterns already deployed to: ${result.path}`,
+          "info",
+        );
+      } else {
+        ctx.ui.notify(
+          "🛡️ Could not find bundled patterns.yaml source file.",
+          "error",
+        );
+      }
     },
   });
 
@@ -782,7 +817,7 @@ export default function (pi: ExtensionAPI) {
   // ===========================================================================
 
   pi.on("session_shutdown", async () => {
-    currentConfig = null;
+    currentLoadedConfig = null;
     aborted = false;
     defenderDisabled = false;
     sessionApprovedPatterns.length = 0;

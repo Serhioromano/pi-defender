@@ -2,7 +2,26 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [v1.4.0]
+## [v1.5.0]
+
+- `add` - **Config table on session start**: The session-start notification now shows a Unicode box-drawing table with per-file rule counts instead of a single-line summary. The table breaks down which rules come from which source:
+  - **`.pi/patterns.yaml`** — essential rules (shipped, overwritten on install)
+  - **`~/.pi/patterns.yaml`** — essential rules (global, overwritten on install)
+  - **`.pi/defender.yaml`** — user rules + whitelist (NEVER overwritten)
+  - **`~/.pi/defender.yaml`** — user rules + whitelist (global, NEVER overwritten)
+  - **`TOTAL (merged)`** row shows the merged result of all 4 sources
+  - Columns: **Pat** (patterns), **Zero** (zero-access paths), **ROnly** (read-only), **NDel** (no-delete), **Wlst** (whitelist)
+  - Unfound config files show `— not found —` instead of empty rows
+  - Applied to all session-start modes (strict, patterns-only, disabled), `/defender:reload`, and `/defender:status`
+- `add` - **`defender.yaml` — separate user config file**: Whitelist entries and custom patterns are now saved to `.pi/defender.yaml` instead of `.pi/patterns.yaml`. The `defender.yaml` file is NEVER overwritten on install/update, so your customizations survive. `patterns.yaml` is always overwritten with the latest bundled essential rules on install.
+- `add` - **`/defender:patterns` command**: Deploys the bundled essential patterns to `.pi/patterns.yaml` (idempotent). Previously documented but never implemented.
+- `add` - **`ensurePatternsConfig()` (config.ts)**: Deploys bundled defaults to `~/.pi/patterns.yaml` and `.pi/patterns.yaml` on first session start if missing. Handles manual installations where npm `postinstall` didn't run.
+- `change` - **Runtime only reads `.pi/` directories**: `loadConfig()` no longer reads from `src/patterns.yaml`, `dist/patterns.yaml`, or `node_modules/.../patterns.yaml`. Only the 4 `.pi/` config files are loaded at runtime.
+- `change` - **`loadConfig()` returns `LoadedConfig`** with 4 `FileSource` entries (no "bundled" row). Removed `deduplicateSources()` — no longer needed.
+- `change` - **`formatConfigTable()`**: Wider source column (24 chars), shows all 4 sources, border aligned to 60 chars.
+- `change` - **`/defender:status` includes config table** alongside stats summary.
+
+## [v1.4.2]
 
 - `change` - **Whitelist patterns now extract only tool identity**: When whitelisting a command via 📋 "Allow & Whitelist", the generated regex pattern now strips all parameters, flags, paths, and directories — keeping only the base command and subcommand. Previously the entire literal command was escaped as-is. Examples:
   - `find . -name "*.ts"` → `^find\b` (was: `find \. -name "\*\.ts"`)
