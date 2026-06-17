@@ -239,7 +239,7 @@ You'll see: 🛡️🔒 Strict Mode ACTIVATED (default) — ALL bash commands no
 
 ### Workflow
 
-When the agent tries to run a bash command, a selector appears with the command clearly displayed. **Chained commands** (using `&&`, `||`, `;`) are split and each sub-command is approved individually — you see exactly which command you're approving.
+When the agent tries to run a bash command, a selector appears with the command clearly displayed. **Chained commands** (using `&&`, `||`, `;`) are shell-aware split and each sub-command is approved individually — separators inside quoted strings (`'...'`, `"..."`, `` `...` ``) are preserved and not treated as chain breaks. You see exactly which command you're approving.
 
 **Single command:**
 ```

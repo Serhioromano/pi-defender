@@ -389,20 +389,118 @@ export function checkCommand(command: string, config: Config): CheckResult {
 // CHAIN COMMAND SPLITTING
 // =============================================================================
 
-const CHAIN_SEPARATOR = /\s*(?:&&|\|\||;)\s*/;
-
 /**
  * Split a bash command string into individual commands by chain separators.
  * Recognized separators: &&, ||, ;
  * Pipes (|) are NOT treated as chain separators — they form a single pipeline.
  *
+ * Shell-aware: string literals (single-quoted, double-quoted, backtick-quoted)
+ * are tracked and chain separators inside them are NOT split on.
+ * Escaped separators (\;, \&&, \||) are also preserved as literal content.
+ *
  * Examples:
- *   "git add . && git commit -m 'msg'" → ["git add .", "git commit -m 'msg'"]
- *   "cd /tmp; rm -rf *"              → ["cd /tmp", "rm -rf *"]
- *   "ls -la"                          → ["ls -la"]
+ *   "git add . && git commit -m 'msg'"  → ["git add .", "git commit -m 'msg'"]
+ *   "cd /tmp; rm -rf *"               → ["cd /tmp", "rm -rf *"]
+ *   "echo 'a;b' && echo done"          → ["echo 'a;b'", "echo done"]
+ *   "bun -e \"code; more\" && ls"       → ["bun -e \"code; more\"", "ls"]
+ *   "echo foo\\;bar"                    → ["echo foo\\;bar"]
+ *   "ls -la"                            → ["ls -la"]
  */
 export function splitChainCommands(command: string): string[] {
-  return command.split(CHAIN_SEPARATOR).map(c => c.trim()).filter(c => c.length > 0);
+  const result: string[] = [];
+  let current = "";
+  let i = 0;
+
+  while (i < command.length) {
+    const ch = command[i];
+
+    // === Track string literals: skip everything inside until closing quote ===
+    if (ch === "'" || ch === '"' || ch === "`") {
+      const quote = ch;
+      current += ch;
+      i++;
+
+      while (i < command.length) {
+        const inner = command[i];
+        if (inner === "\\") {
+          // Backslash escape — consume both the backslash and the next char
+          current += inner;
+          i++;
+          if (i < command.length) {
+            current += command[i];
+            i++;
+          }
+          continue;
+        }
+        if (inner === quote) {
+          // Closing quote found
+          current += inner;
+          i++;
+          break;
+        }
+        // Regular character inside string — keep it
+        current += inner;
+        i++;
+      }
+      continue;
+    }
+
+    // === Handle escaped chain separators: \;, \&&, \|| ===
+    if (ch === "\\") {
+      const next = i + 1 < command.length ? command[i + 1] : "";
+      if (next === ";" || next === "&" || next === "|") {
+        // Literal escaped separator — keep both chars
+        current += ch + next;
+        i += 2;
+        continue;
+      }
+      // Other escape — keep as-is
+      current += ch;
+      i++;
+      if (i < command.length) {
+        current += command[i];
+        i++;
+      }
+      continue;
+    }
+
+    // === Check for chain separator: && ===
+    if (ch === "&" && i + 1 < command.length && command[i + 1] === "&") {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) result.push(trimmed);
+      current = "";
+      i += 2;
+      continue;
+    }
+
+    // === Check for chain separator: || ===
+    if (ch === "|" && i + 1 < command.length && command[i + 1] === "|") {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) result.push(trimmed);
+      current = "";
+      i += 2;
+      continue;
+    }
+
+    // === Check for chain separator: ; ===
+    if (ch === ";") {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) result.push(trimmed);
+      current = "";
+      i++;
+      continue;
+    }
+
+    // === Regular character ===
+    current += ch;
+    i++;
+  }
+
+  // Push remaining text
+  const trimmed = current.trim();
+  if (trimmed.length > 0) result.push(trimmed);
+
+  return result;
 }
 
 // =============================================================================

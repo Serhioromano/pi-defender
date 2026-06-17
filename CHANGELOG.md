@@ -2,6 +2,10 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [v1.6.4]
+
+- `fix` - **Shell-aware command chain splitting (#3)**: `splitChainCommands()` no longer naively splits on `&&`, `||`, `;` — it now tracks single-quote, double-quote, and backtick string literals, preserving chain separators inside them. Escaped separators (`\;`, `\&&`, `\||`) are also kept as literal content. Fixes false splits when multi-line inline code (e.g. `bun -e "..."`) contains semicolons or other chain separators inside quoted strings.
+
 ## [v1.6.3]
 
 - `fix` - **Truncate all rendered lines to terminal width**: All three TUI render functions (session-start selector, `patternBlockedPrompt`, `strictModePrompt`) now apply `truncateToWidth(l, width)` to every rendered line via `.map()`. The specific trigger was the hint line in `strictModePrompt` ("Run  /defender:strict off to turn Strict Mode off and stop these prompts to popup.") which was 84 visible chars on an 82-char terminal. The hint text was also shortened ("to popup" → ""). Additionally, the reason line in `patternBlockedPrompt` is explicitly truncated to prevent overflows from long pattern reasons.
