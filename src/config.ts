@@ -446,12 +446,23 @@ export function splitChainCommands(command: string): string[] {
     }
 
     // === Handle escaped chain separators: \;, \&&, \|| ===
+    // === Handle bash line continuation: \<newline> ===
     if (ch === "\\") {
       const next = i + 1 < command.length ? command[i + 1] : "";
       if (next === ";" || next === "&" || next === "|") {
         // Literal escaped separator — keep both chars
         current += ch + next;
         i += 2;
+        continue;
+      }
+      // Bash line continuation: \ followed by \n — consume silently
+      if (next === "\n") {
+        i += 2;
+        continue;
+      }
+      // Windows line ending: \ followed by \r\n — consume silently
+      if (next === "\r" && i + 2 < command.length && command[i + 2] === "\n") {
+        i += 3;
         continue;
       }
       // Other escape — keep as-is

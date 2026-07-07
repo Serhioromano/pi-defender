@@ -132,7 +132,8 @@ remainder of the current prompt.
 ### Bash handler tiers (index.ts)
 
 Chained commands (`&&`, `||`, `;`) are split via `splitChainCommands()` and each
-sub-command is processed individually through the full pipeline:
+sub-command is processed individually through the full pipeline.
+Bash line continuation (`\<newline>`) is silently consumed (not added to sub-commands):
 
 ```
 for each subCmd in chain:
@@ -228,7 +229,7 @@ chain selectors to be skipped.
 
 ### Chained command processing
 
-When a bash command contains chain separators (`&&`, `||`, `;`), `splitChainCommands()` from `config.ts` breaks it into individual sub-commands — but only separators OUTSIDE string literals (single-quoted, double-quoted, backtick-quoted). Escaped separators (`\;`, `\&&`, `\||`) are preserved as literal content. This prevents false splits when multi-line inline code (e.g. `bun -e "..."`) contains semicolons inside quoted strings. Each sub-command is then processed independently through `checkCommand()` + `patternBlockedPrompt()` + `strictModePrompt()`. All sub-commands must be approved for the full chain to execute.
+When a bash command contains chain separators (`&&`, `||`, `;`), `splitChainCommands()` from `config.ts` breaks it into individual sub-commands — but only separators OUTSIDE string literals (single-quoted, double-quoted, backtick-quoted). Escaped separators (`\;`, `\&&`, `\||`) are preserved as literal content. Bash line continuation (`\<newline>` and `\<\r\n>`) is silently consumed — neither the backslash nor the newline is added to any sub-command. This prevents false splits when multi-line inline code (e.g. `bun -e "..."`) contains semicolons inside quoted strings, and prevents stray backslashes from appearing at the start of sub-commands after `&& \<newline>` continuations. Each sub-command is then processed independently through `checkCommand()` + `patternBlockedPrompt()` + `strictModePrompt()`. All sub-commands must be approved for the full chain to execute.
 
 A **150ms delay** runs between sub-command selectors to prevent TUI race conditions — without it, the second `ctx.ui.custom()` call may conflict with the first selector's teardown and never render.
 
