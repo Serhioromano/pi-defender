@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [Unreleased]
+## [v1.6.5]
 
 - `fix` - **Bash line continuation `\` breaks chain splitting (#5)**: `splitChainCommands()` now detects bash line continuation (`\` followed by newline) and silently consumes both characters without adding them to `current`. Previously the `\` fell through to the generic escape handler which kept both the backslash and the newline byte in the command text — after `trim()` the newline was stripped but the leading `\` remained, making every sub-command after a line continuation start with a stray backslash. Also handles Windows-style `\r\n` line endings.
 
