@@ -15,7 +15,8 @@
  *   - Interactive selector UI with approve/deny/approve-all/whitelist options
  *   - Strict mode whitelist: auto-approve remembered commands
  *   - YAML configuration (project-local or global)
- *   - Management commands: /defender:reload, /defender:status, /defender:patterns, /defender:strict
+ *   - Management commands: /defender:reload, /defender:status, /defender:patterns, /defender:strict, /defender:report-issue
+ *   - Custom tool: pi_defender_create_issue — creates GitHub issues via REST API (no gh CLI needed)
  *
  * Previously: pi-damage-control
  * Inspired by: https://github.com/disler/claude-code-damage-control
@@ -24,9 +25,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, decodeKittyPrintable, truncateToWidth } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
 import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, formatConfigTable, formatStatsTable, mergeWhitelistToGlobal, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
+import { execSync } from "node:child_process";
 
 // @ts-ignore — __dirname is CJS global made available by the runtime
 const DEFENDER_VERSION: string = (() => {
@@ -65,6 +69,119 @@ export default function (pi: ExtensionAPI) {
     currentLoadedConfig = loadConfig(cwd);
     return currentLoadedConfig;
   }
+
+  // ===========================================================================
+  // GITHUB TOKEN RESOLUTION (multi-source, gh-free)
+  // ===========================================================================
+
+  /**
+   * Try multiple sources to find a GitHub token.
+   * Order: GH_TOKEN env → GITHUB_TOKEN env → `gh auth token` → ~/.config/gh/hosts.yml
+   */
+  function getGitHubToken(): string | null {
+    // 1. Environment variables
+    if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
+    if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+
+    // 2. gh CLI auth token (if gh is installed)
+    try {
+      const token = execSync("gh auth token", { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+      if (token) return token;
+    } catch { /* gh not installed or not authenticated */ }
+
+    // 3. Parse ~/.config/gh/hosts.yml for github.com token
+    try {
+      const hostsPath = join(homedir(), ".config", "gh", "hosts.yml");
+      if (existsSync(hostsPath)) {
+        const content = readFileSync(hostsPath, "utf-8");
+        // Simple YAML parsing: find oauth_token under github.com
+        const match = content.match(/github\.com:\s*\n[\s\S]*?oauth_token:\s*(\S+)/);
+        if (match) return match[1];
+      }
+    } catch { /* ignore */ }
+
+    return null;
+  }
+
+  // ===========================================================================
+  // GITHUB ISSUE CREATION TOOL (works without gh CLI)
+  // ===========================================================================
+
+  pi.registerTool({
+    name: "pi_defender_create_issue",
+    label: "Create GitHub Issue",
+    description:
+      "Create a GitHub issue on the Serhioromano/pi-defender repository. " +
+      "Uses the GitHub REST API — no gh CLI required. " +
+      "Requires a GitHub token from GH_TOKEN, GITHUB_TOKEN, or gh auth.",
+    promptSnippet: "Create a GitHub issue on Serhioromano/pi-defender",
+    promptGuidelines: [
+      "Use pi_defender_create_issue when the user asks to report an issue for Pi Defender. " +
+      "The label should be 'bug' for bugs or 'enhancement' for feature requests.",
+    ],
+    parameters: Type.Object({
+      title: Type.String({ description: "Issue title (concise, descriptive, max 80 chars)" }),
+      body: Type.String({ description: "Issue body in markdown, including ## Description and ## Diagnostics sections" }),
+      label: Type.String({ description: "Either 'bug' or 'enhancement'" }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const token = getGitHubToken();
+      if (!token) {
+        return {
+          content: [{
+            type: "text",
+            text: "❌ Cannot create issue: no GitHub token found.\n\n" +
+              "Set one of:\n" +
+              "  • GH_TOKEN or GITHUB_TOKEN environment variable\n" +
+              "  • Install and authenticate gh CLI: `gh auth login`",
+          }],
+          details: {},
+        };
+      }
+
+      // Validate label
+      const validLabels = ["bug", "enhancement"];
+      const actualLabel = validLabels.includes(params.label) ? params.label : "bug";
+
+      const response = await fetch(
+        "https://api.github.com/repos/Serhioromano/pi-defender/issues",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+          body: JSON.stringify({
+            title: params.title,
+            body: params.body,
+            labels: [actualLabel],
+          }),
+        },
+      );
+
+      const data = await response.json() as any;
+
+      if (!response.ok) {
+        return {
+          content: [{
+            type: "text",
+            text: `❌ Failed to create issue (HTTP ${response.status}): ${data.message || JSON.stringify(data)}`,
+          }],
+          details: {},
+        };
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text: `✅ Issue created: ${data.html_url}\n   Title: ${data.title}\n   Label: ${actualLabel}`,
+        }],
+        details: { url: data.html_url, number: data.number },
+      };
+    },
+  });
 
   // ===========================================================================
   // SESSION START
@@ -757,6 +874,71 @@ export default function (pi: ExtensionAPI) {
           "info",
         );
       }
+    },
+  });
+
+  pi.registerCommand("defender:report-issue", {
+    description: "Report an issue — AI will analyze, enhance, and create a GitHub issue",
+    handler: async (args, ctx) => {
+      const rawMessage = args.trim();
+      if (!rawMessage) {
+        ctx.ui.notify(
+          "🛡️ Usage: /defender:report-issue <description>\n" +
+          "   Describe your bug or feature request. The AI will analyze it,\n" +
+          "   detect type (bug/feature request), enhance the description, and create the issue.\n" +
+          "   Example: /defender:report-issue The strict mode prompt doesn't show on WSL",
+          "warning",
+        );
+        return;
+      }
+
+      const loaded = getLoadedConfig(ctx.cwd);
+      const config = loaded.config;
+
+      // Build diagnostics table
+      const diagLines: string[] = [];
+      diagLines.push("## Diagnostics");
+      diagLines.push("");
+      diagLines.push(`- **Version**: ${DEFENDER_VERSION}`);
+      diagLines.push(`- **Strict Mode**: ${strictMode ? "ON" : "OFF"}${defenderDisabled ? " (but defender is DISABLED)" : ""}`);
+      diagLines.push(`- **Aborted state**: ${aborted ? "yes" : "no"}`);
+      diagLines.push(`- **Session stats**: ${stats.allowed} allowed, ${stats.blocked} blocked, ${stats.strictApproved} strict-approved, ${stats.strictBlocked} strict-denied, ${stats.strictApprovedAll} approve-all`);
+      diagLines.push(`- **Session-approved patterns**: ${sessionApprovedPatterns.length}`);
+      diagLines.push("");
+      diagLines.push("### Config sources");
+      diagLines.push("");
+      diagLines.push("| Source | Pat | Zero | ROnly | NDel | Wlst |");
+      diagLines.push("|--------|-----|------|-------|------|------|");
+      for (const src of loaded.sources) {
+        if (src.found) {
+          diagLines.push(`| \`${src.displayPath}\` | ${src.patternCount} | ${src.zeroAccessCount} | ${src.readOnlyCount} | ${src.noDeleteCount} | ${src.whitelistCount} |`);
+        } else {
+          diagLines.push(`| \`${src.displayPath}\` | — | — | — | — | — |`);
+        }
+      }
+      diagLines.push(`| **TOTAL (merged)** | ${config.bashToolPatterns.length} | ${config.zeroAccessPaths.length} | ${config.readOnlyPaths.length} | ${config.noDeletePaths.length} | ${config.strictModeWhiteList.length} |`);
+      const diagnosticsMd = diagLines.join("\n");
+
+      // Delegate to the AI agent via a follow-up message.
+      // The AI will use the pi_defender_create_issue tool (GitHub REST API, no gh CLI needed).
+      pi.sendUserMessage(
+        `The user reported an issue for Pi Defender (Serhioromano/pi-defender).\n\n` +
+        `User's message:\n"""\n${rawMessage}\n"""\n\n` +
+        `Your task:\n` +
+        `1. Analyze the message — is this a **bug report** or **feature request**?\n` +
+        `2. Create a concise, descriptive issue title (max 80 chars)\n` +
+        `3. Enhance the description: add clarity, context, steps to reproduce (for bugs) or use case (for features). Keep it in the user's voice — don't add meta-commentary about what you did.\n` +
+        `4. Combine your enhanced description with the diagnostics section below into one markdown body.\n` +
+        `5. Call the **pi_defender_create_issue** tool with title, body, and label ("bug" or "enhancement").\n\n` +
+        `Diagnostics to append to the issue body:\n\n${diagnosticsMd}`,
+        { deliverAs: "followUp" },
+      );
+
+      ctx.ui.notify(
+        "🛡️ Queued for AI analysis — the agent will analyze your report, enhance it, and create the issue.\n" +
+        "   Diagnostics (version, stats, config) will be included automatically.",
+        "info",
+      );
     },
   });
 

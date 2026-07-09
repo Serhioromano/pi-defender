@@ -2,3 +2,6 @@ strictModeWhiteList:
   - ^npm test\b
   - ^index\.ts\b
   - ^gh\b
+  - ^grep\b
+  - ^sed\b
+  - ^node\b

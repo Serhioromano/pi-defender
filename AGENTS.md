@@ -256,6 +256,7 @@ A **150ms delay** runs between sub-command selectors to prevent TUI race conditi
 | `/defender:patterns` | Copies bundled essential patterns to `.pi/patterns.yaml` (idempotent) |
 | `/defender:strict [on\|off]` | Toggles strict mode (ON by default, resets session-approved/aborted) |
 | `/defender:globalize-whitelist` | Copies unique local whitelist patterns from `.pi/defender.yaml` to `~/.pi/defender.yaml` |
+| `/defender:report-issue <description>` | AI-powered: analyzes raw message (bug/feature), enhances description, creates GitHub issue via custom tool (REST API, no gh CLI needed) |
 
 ## When editing patterns
 
@@ -273,6 +274,8 @@ A **150ms delay** runs between sub-command selectors to prevent TUI race conditi
 - `ctx.ui.notify(message, "info"|"warning"|"error")` — status messages
 - `ctx.ui.confirm(title, message)` → `boolean` — yes/no prompts
 - `ctx.ui.custom(callback)` → `T` — custom TUI components (SelectList-style)
+- `pi.registerTool(definition)` — custom tools callable by the LLM (e.g., `pi_defender_create_issue` for GitHub REST API)
+- `pi.sendUserMessage(content, options?)` — queue user messages for the agent in follow-up turns
 - `ctx.hasUI` → `boolean` — TUI availability
 - `ctx.cwd` → `string` — working directory
 

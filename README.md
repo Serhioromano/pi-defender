@@ -372,6 +372,29 @@ Or toggle without a parameter:
 | `/defender:patterns` | Initialize project-local patterns.yaml |
 | `/defender:strict [on|off]` | Toggle strict mode (blocks all bash, user approval required) |
 | `/defender:globalize-whitelist` | Copy unique local whitelist patterns to global defender.yaml |
+| `/defender:report-issue <description>` | AI analyzes, enhances, and creates a GitHub issue with diagnostics |
+
+### Reporting Issues
+
+When you find a bug or want to request a feature, use `/defender:report-issue` with a brief description. The AI agent will:
+
+1. **Analyze** your message — detect if it's a bug report or feature request
+2. **Enhance** the description with clarity, context, and steps to reproduce
+3. **Create** the GitHub issue with the enhanced title/description + automatic diagnostics
+
+```
+/defender:report-issue The strict mode prompt doesn't appear on WSL. I'm using VS Code and Kitty protocol is active.
+```
+
+The command collects diagnostics (version, session stats, config table) and delegates to the AI agent via `pi.sendUserMessage()`. The AI calls the built-in `pi_defender_create_issue` tool which uses the **GitHub REST API directly** — no `gh` CLI required.
+
+**GitHub authentication** — the tool finds a token from any of these sources (tried in order):
+1. `GH_TOKEN` environment variable
+2. `GITHUB_TOKEN` environment variable
+3. `gh auth token` (if gh CLI is installed)
+4. `~/.config/gh/hosts.yml` (gh CLI config file)
+
+If no token is found, the AI will tell you to set `GH_TOKEN` or install `gh`.
 
 ## Directory Structure
 
