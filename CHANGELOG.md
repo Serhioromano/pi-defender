@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [Unreleased]
+## [v1.7.1]
 
 - `docs` - **README overhaul**: Cut from ~350 lines to ~120. Removed implementation details already covered in `AGENTS.md` (selector internals, chain splitting algorithms, TUI rendering safety, keyboard protocol handling, theme saving mechanics, session-approved pattern lifecycle). Replaced with scannable feature descriptions, quick-start install, essential commands, and a minimal config example. Focused on what an end user actually needs.
 
