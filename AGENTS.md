@@ -115,6 +115,7 @@ counts are highlighted in accent color. `index.ts` passes `savedTheme.fg.bind(sa
 - **generateWhitelistPattern(command)** — extracts tool identity (base command + subcommand for meta-tools like git, npm, npx, docker), strips all parameters/flags/paths/directories, tokenizes respecting quotes, reduces path-prefixed commands to basename, wraps in `^...\b`. For `npm run`/`bun run`/`yarn run`/`pnpm run`, generates a flag-tolerant 3-level pattern (e.g. `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b`). Returns empty string when no script name is found — never falls back to `^npm run\b` because that would approve ALL run commands.
 - **generateWhitelistPatterns(command)** — splits chained commands and applies `generateWhitelistPattern` to each
 - **addPatternToWhitelist(cwd, pattern)** — reads/creates `.pi/defender.yaml`, appends pattern to `strictModeWhiteList`, writes back. Returns `{ added, reason }`. Auto-creates `.pi/` dir and `defender.yaml` as needed. NEVER writes to `patterns.yaml` (which is overwritten on install).
+- **mergeWhitelistToGlobal(cwd)** — compares local `.pi/defender.yaml` and global `~/.pi/defender.yaml` whitelists. Copies any patterns from local that don't exist in global to the global file. Returns `{ added, skipped, reason }`. Used by `/defender:globalize-whitelist`.
 
 ### Session-approved patterns (index.ts)
 
@@ -254,6 +255,7 @@ A **150ms delay** runs between sub-command selectors to prevent TUI race conditi
 | `/defender:reload` | Clears cached config, reloads from YAML, shows table |
 | `/defender:patterns` | Copies bundled essential patterns to `.pi/patterns.yaml` (idempotent) |
 | `/defender:strict [on\|off]` | Toggles strict mode (ON by default, resets session-approved/aborted) |
+| `/defender:globalize-whitelist` | Copies unique local whitelist patterns from `.pi/defender.yaml` to `~/.pi/defender.yaml` |
 
 ## When editing patterns
 

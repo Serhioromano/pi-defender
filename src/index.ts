@@ -24,7 +24,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, decodeKittyPrintable, truncateToWidth } from "@earendil-works/pi-tui";
-import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, formatConfigTable, formatStatsTable, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
+import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, formatConfigTable, formatStatsTable, mergeWhitelistToGlobal, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -736,6 +736,27 @@ export default function (pi: ExtensionAPI) {
         `\n\nRun /defender:reload to refresh after editing.`,
         "info",
       );
+    },
+  });
+
+  pi.registerCommand("defender:globalize-whitelist", {
+    description: "Copy unique local whitelist patterns to global defender.yaml",
+    handler: async (_args, ctx) => {
+      const result = mergeWhitelistToGlobal(ctx.cwd);
+
+      if (result.added === 0) {
+        ctx.ui.notify(
+          `🛡️ Globalize whitelist: ${result.reason || "Nothing to do"}`,
+          "info",
+        );
+      } else {
+        // Reload config so the new global patterns take effect
+        currentLoadedConfig = null;
+        ctx.ui.notify(
+          `🛡️ Globalized ${result.added} whitelist pattern(s)${result.skipped > 0 ? ` (${result.skipped} already existed in global)` : ""} from .pi/defender.yaml → ~/.pi/defender.yaml`,
+          "info",
+        );
+      }
     },
   });
 

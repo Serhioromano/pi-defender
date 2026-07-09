@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
@@ -778,6 +778,106 @@ export function addPatternsToWhitelist(cwd: string, patterns: string[]): { added
   } catch (e) {
     return { added: 0, skipped: 0, reason: `Failed to write patterns: ${String(e)}` };
   }
+}
+
+// =============================================================================
+// GLOBALIZE WHITELIST — copy local patterns to global defender.yaml
+// =============================================================================
+
+/**
+ * Read only the strictModeWhiteList from a specific defender.yaml path.
+ * Returns empty array if file doesn't exist or can't be parsed.
+ */
+function readWhitelistFromFile(defenderPath: string): string[] {
+  const cfg = parseConfigFile(defenderPath);
+  return cfg?.strictModeWhiteList || [];
+}
+
+/**
+ * Add patterns to the strictModeWhiteList in a specific defender.yaml.
+ * Creates the file and directory if they don't exist.
+ * Preserves all other existing keys in the YAML file.
+ * Skips duplicates — only truly new patterns are counted.
+ */
+function addPatternsToDefenderFile(
+  defenderPath: string,
+  patterns: string[],
+): { added: number; skipped: number; reason: string } {
+  const defenderDir = dirname(defenderPath);
+
+  if (!existsSync(defenderDir)) {
+    try {
+      mkdirSync(defenderDir, { recursive: true });
+    } catch {
+      return { added: 0, skipped: 0, reason: `Failed to create directory: ${defenderDir}` };
+    }
+  }
+
+  let raw: Record<string, unknown>;
+  if (existsSync(defenderPath)) {
+    try {
+      const content = readFileSync(defenderPath, "utf-8");
+      raw = parseYaml(content) as Record<string, unknown>;
+    } catch {
+      raw = {};
+    }
+  } else {
+    raw = {};
+  }
+
+  const existingList: string[] = (raw.strictModeWhiteList as string[]) || [];
+  let added = 0;
+  let skipped = 0;
+
+  for (const pattern of patterns) {
+    if (existingList.includes(pattern)) {
+      skipped++;
+    } else {
+      existingList.push(pattern);
+      added++;
+    }
+  }
+
+  if (added === 0) {
+    return { added: 0, skipped, reason: `All ${patterns.length} pattern(s) already in whitelist` };
+  }
+
+  raw.strictModeWhiteList = existingList;
+  try {
+    const yamlStr = stringifyYaml(raw, { lineWidth: 120 });
+    writeFileSync(defenderPath, yamlStr, "utf-8");
+    return { added, skipped, reason: "" };
+  } catch (e) {
+    return { added: 0, skipped: 0, reason: `Failed to write patterns: ${String(e)}` };
+  }
+}
+
+/**
+ * Compare local (.pi/defender.yaml) and global (~/.pi/defender.yaml) whitelists.
+ * Copy any patterns from local that don't exist in global to the global file.
+ *
+ * This lets users accumulate whitelist entries across projects and then
+ * globalize them so future projects benefit from the same approvals.
+ */
+export function mergeWhitelistToGlobal(cwd: string): { added: number; skipped: number; reason: string } {
+  const localPath = join(cwd, ".pi", "defender.yaml");
+  const globalPath = join(homedir(), ".pi", "defender.yaml");
+
+  const localWhitelist = readWhitelistFromFile(localPath);
+  const globalWhitelist = readWhitelistFromFile(globalPath);
+
+  // Find patterns in local that are NOT in global
+  const newPatterns = localWhitelist.filter(p => !globalWhitelist.includes(p));
+
+  if (newPatterns.length === 0) {
+    return {
+      added: 0,
+      skipped: 0,
+      reason: "No new patterns to globalize — local whitelist is empty or all patterns already exist in global",
+    };
+  }
+
+  return addPatternsToDefenderFile(globalPath, newPatterns);
 }
 
 // =============================================================================

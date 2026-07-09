@@ -371,6 +371,7 @@ Or toggle without a parameter:
 | `/defender:reload` | Reload YAML configuration |
 | `/defender:patterns` | Initialize project-local patterns.yaml |
 | `/defender:strict [on|off]` | Toggle strict mode (blocks all bash, user approval required) |
+| `/defender:globalize-whitelist` | Copy unique local whitelist patterns to global defender.yaml |
 
 ## Directory Structure
 
