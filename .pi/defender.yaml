@@ -1,3 +1,4 @@
 strictModeWhiteList:
   - ^npm test\b
   - ^index\.ts\b
+  - ^gh\b
