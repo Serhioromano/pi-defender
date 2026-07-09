@@ -19,6 +19,31 @@ The next time you start Pi agent, a **protection-level selector** appears — ch
 - 🛡️ **Patterns only** — only dangerous commands trigger prompts
 - ⚪ **Disable Defender** — no protection for this session
 
+### ⚙️ Default Mode (skip the session-start selector)
+
+**From the selector:** The session-start selector includes 💾 *Save choice for this project* and 🌐 *Save choice forever (global)* options. Navigate to your preferred mode, then down to a save option to persist it — no manual YAML editing required.
+
+**From the command line:** Use `/defender:default-mode` to set the mode without the selector:
+
+```
+/defender:default-mode strict        # 🔒 Strict ON (global)
+/defender:default-mode patterns      # 🛡️ Patterns only (global)
+/defender:default-mode off           # ⚪ Disable defender (global)
+/defender:default-mode interactive   # reset — show selector again
+/defender:default-mode strict --local # project-local (.pi/defender.yaml)
+```
+
+**In YAML config:** Add `defaultMode` to any `defender.yaml` or `patterns.yaml` to skip the interactive selector on session start and go directly to your preferred mode:
+
+```yaml
+defaultMode: strict    # 🔒 Strict Mode ON (default behavior)
+defaultMode: patterns   # 🛡️ Patterns only
+defaultMode: off        # ⚪ Disable Defender
+defaultMode: interactive # show the selector (same as omitting the key)
+```
+
+Place it in `.pi/defender.yaml` (project-local, persistent) or `~/.pi/defender.yaml` (global). When set to anything other than `interactive`, the session-start selector is skipped entirely and a config table notification is shown instead.
+
 ## Features
 
 **🛡️ Three layers of protection:**
@@ -45,6 +70,7 @@ The next time you start Pi agent, a **protection-level selector** appears — ch
 | `/defender:strict [on\|off]` | Toggle strict mode (ON by default) |
 | `/defender:globalize-whitelist` | Copy unique local whitelist patterns to `~/.pi/defender.yaml` |
 | `/defender:report-issue <desc>` | AI-enhanced bug/feature report → GitHub issue |
+| `/defender:default-mode` | Set or reset the default protection mode (skip session-start selector) |
 
 ## Configuration
 

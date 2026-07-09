@@ -15,8 +15,9 @@
  *   - Interactive selector UI with approve/deny/approve-all/whitelist options
  *   - Strict mode whitelist: auto-approve remembered commands
  *   - YAML configuration (project-local or global)
- *   - Management commands: /defender:reload, /defender:status, /defender:patterns, /defender:strict, /defender:report-issue
+ *   - Management commands: /defender:reload, /defender:status, /defender:patterns, /defender:strict, /defender:report-issue, /defender:default-mode
  *   - Custom tool: pi_defender_create_issue — creates GitHub issues via REST API (ONLY for Serhioromano/pi-defender, ONLY via /defender:report-issue)
+ *   - Management commands: /defender:reload, /defender:status, /defender:patterns, /defender:strict
  *
  * Previously: pi-damage-control
  * Inspired by: https://github.com/disler/claude-code-damage-control
@@ -26,7 +27,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, decodeKittyPrintable, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, formatConfigTable, formatStatsTable, mergeWhitelistToGlobal, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
+import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, formatConfigTable, formatStatsTable, mergeWhitelistToGlobal, setDefaultMode, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -59,6 +60,8 @@ export default function (pi: ExtensionAPI) {
   /** Raw dim ANSI escape code — restored after accent-colored cells so text stays dim. */
   const getDimAnsi = (): string | undefined =>
     savedTheme ? (savedTheme as any).getFgAnsi?.("dim") : undefined;
+  /** Safe theme formatter — applies color when theme available, returns plain text otherwise. */
+  const fg = (color: string, text: string): string => (getFg() ?? ((_: string, t: string) => t))(color, text);
 
   function getConfig(cwd: string): Config {
     return getLoadedConfig(cwd).config;
@@ -193,6 +196,27 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     const loaded = getLoadedConfig(ctx.cwd);
 
+    // defaultMode from defender.yaml — skip the interactive selector entirely
+    if (loaded.config.defaultMode && loaded.config.defaultMode !== "interactive") {
+      const mode = loaded.config.defaultMode;
+      if (mode === "off") {
+        strictMode = false;
+        defenderDisabled = true;
+      } else if (mode === "patterns") {
+        strictMode = false;
+        defenderDisabled = false;
+      } else {
+        strictMode = true;
+        defenderDisabled = false;
+      }
+      ctx.ui.notify(
+        formatConfigTable(loaded, DEFENDER_VERSION, mode === "strict", mode === "off", undefined, undefined),
+        "info",
+      );
+      return;
+    }
+
+
     if (!ctx.hasUI || typeof ctx.ui?.custom !== "function") {
       // No UI — default to strict mode ON with table notification
       strictMode = true;
@@ -208,11 +232,16 @@ export default function (pi: ExtensionAPI) {
         (_tui: any, theme: any, _kb: any, done: (value: string) => void) => {
           savedTheme = theme;
           let selectedIndex = 0;
-          const options = [
+          const modeOptions = [
             { value: "strict", label: "🔒 Strict Mode ON (recommended)", desc: "Every bash command goes through filtering or approval" },
             { value: "patterns", label: "🛡️ Patterns only", desc: "Only patterns.yaml blocked rules are enforced for confirmation" },
-            { value: "off", label: "⚪ Disable Defender", desc: "No protection — use `/defender:strict on` to re-enable" },
+            { value: "off", label: "⚪ Disable Defender", desc: "No protection — use /defender:strict on to re-enable" },
           ];
+          const saveOptions = [
+            { checked: false, label: "💾 Save choice for this project", desc: "Writes defaultMode to .pi/defender.yaml" },
+            { checked: false, label: "🌐 Save choice forever (global)", desc: "Writes defaultMode to ~/.pi/defender.yaml" },
+          ];
+          const totalItems = modeOptions.length + saveOptions.length;
 
           function render(width: number): string[] {
             const lines: string[] = [];
@@ -222,76 +251,156 @@ export default function (pi: ExtensionAPI) {
             lines.push("");
             lines.push(theme.fg("warning", " Choose protection level for this session:"));
             lines.push("");
-            for (let i = 0; i < options.length; i++) {
+            for (let i = 0; i < modeOptions.length; i++) {
               const isSelected = i === selectedIndex;
               const prefix = isSelected ? theme.fg("accent", "▶") : " ";
               const numTag = `[${i + 1}]`;
               const linePrefix = ` ${prefix} ${numTag}`;
               if (isSelected) {
-                lines.push(` ${linePrefix} ${theme.fg("accent", options[i].label)}`);
-                lines.push(`        ${theme.fg("dim", options[i].desc)}`);
+                lines.push(` ${linePrefix} ${theme.fg("accent", modeOptions[i].label)}`);
+                lines.push(`        ${theme.fg("dim", modeOptions[i].desc)}`);
               } else {
-                lines.push(` ${linePrefix} ${options[i].label}`);
-                lines.push(`        ${theme.fg("dim", options[i].desc)}`);
+                lines.push(` ${linePrefix} ${modeOptions[i].label}`);
+                lines.push(`        ${theme.fg("dim", modeOptions[i].desc)}`);
               }
             }
             lines.push("");
-            lines.push(theme.fg("dim", " ↑↓ navigate · 1-N select · enter confirm"));
+            lines.push(theme.fg("dim", "─".repeat(Math.min(width - 2, 72))));
+            for (let i = 0; i < saveOptions.length; i++) {
+              const globalIdx = modeOptions.length + i;
+              const isSelected = globalIdx === selectedIndex;
+              const prefix = isSelected ? theme.fg("accent", "▶") : " ";
+              const checkbox = saveOptions[i].checked
+                ? theme.fg("accent", "[✓]")
+                : "[ ]";
+              const label = saveOptions[i].label;
+              const desc = saveOptions[i].desc;
+              if (isSelected) {
+                lines.push(` ${prefix} ${checkbox} ${label}`);
+                lines.push(`           ${theme.fg("dim", desc)}`);
+              } else {
+                lines.push(theme.fg("dim", ` ${prefix} ${checkbox} ${label}`));
+                lines.push(`           ${theme.fg("dim", desc)}`);
+              }
+            }
+            lines.push("");
+            lines.push(theme.fg("dim", " ↑↓ navigate · 1-3 select · 4-5 toggle · enter confirm/toggle"));
             lines.push(theme.fg("accent", sep));
             return lines.map(l => truncateToWidth(l, width));
           }
 
           return {
             render,
-            invalidate: () => {},
+            invalidate: () => { },
             handleInput: (data: string) => {
               const digit = decodeKittyPrintable(data) || data;
+
+              // 1-3: select mode (with any checked saves)
               if (/^[1-3]$/.test(digit)) {
-                done(options[parseInt(digit) - 1].value);
+                const modeIdx = parseInt(digit, 10) - 1;
+                done(buildChoice(modeOptions[modeIdx].value));
                 return;
               }
+
+              // 4-5: toggle checkbox
+              if (/^[4-5]$/.test(digit)) {
+                const saveIdx = parseInt(digit, 10) - 1 - modeOptions.length;
+                if (saveIdx >= 0 && saveIdx < saveOptions.length) {
+                  saveOptions[saveIdx].checked = !saveOptions[saveIdx].checked;
+                  _tui.requestRender();
+                }
+                return;
+              }
+
               if (matchesKey(data, Key.enter)) {
-                done(options[selectedIndex].value);
+                if (selectedIndex < modeOptions.length) {
+                  done(buildChoice(modeOptions[selectedIndex].value));
+                } else {
+                  const saveIdx = selectedIndex - modeOptions.length;
+                  if (saveIdx >= 0 && saveIdx < saveOptions.length) {
+                    saveOptions[saveIdx].checked = !saveOptions[saveIdx].checked;
+                    _tui.requestRender();
+                  }
+                }
                 return;
               }
+
               if (matchesKey(data, Key.up) || data === "k") {
-                selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+                selectedIndex = (selectedIndex - 1 + totalItems) % totalItems;
                 _tui.requestRender();
                 return;
               }
               if (matchesKey(data, Key.down) || data === "j") {
-                selectedIndex = (selectedIndex + 1) % options.length;
+                selectedIndex = (selectedIndex + 1) % totalItems;
                 _tui.requestRender();
                 return;
               }
             },
           };
+
+          // Build the choice string from the selected mode + any checked saves
+          function buildChoice(mode: string): string {
+            const parts: string[] = [mode];
+            if (saveOptions[0].checked) parts.push("save-local");
+            if (saveOptions[1].checked) parts.push("save-global");
+            return parts.join(":");
+          }
         },
       );
 
       const choice = (result ?? "strict") as string;
-      if (choice === "off") {
+
+      // Parse choice: "strict", "patterns:save-local", "off:save-global", "strict:save-local:save-global"
+      const choiceParts = choice.split(":");
+      const modeSelected = choiceParts[0] as Config["defaultMode"];
+      const saveLocal = choiceParts.includes("save-local");
+      const saveGlobal = choiceParts.includes("save-global");
+
+      // Apply mode for this session
+      if (modeSelected === "off") {
         strictMode = false;
         defenderDisabled = true;
-        ctx.ui.notify(
-          formatConfigTable(loaded, DEFENDER_VERSION, false, true, getFg(), getDimAnsi()),
-          "warning",
-        );
-      } else if (choice === "patterns") {
+      } else if (modeSelected === "patterns") {
         strictMode = false;
         defenderDisabled = false;
-        ctx.ui.notify(
-          formatConfigTable(loaded, DEFENDER_VERSION, false, false, getFg(), getDimAnsi()),
-          "info",
-        );
       } else {
         strictMode = true;
         defenderDisabled = false;
-        ctx.ui.notify(
-          formatConfigTable(loaded, DEFENDER_VERSION, true, false, getFg(), getDimAnsi()),
-          "info",
-        );
       }
+
+      // Persist if save checkbox was ticked
+      if (saveLocal || saveGlobal) {
+        const saveResults: string[] = [];
+        if (saveLocal) {
+          const r = setDefaultMode(ctx.cwd, modeSelected, false);
+          saveResults.push(r.success ? "local" : r.reason ?? "local-failed");
+        }
+        if (saveGlobal) {
+          const r = setDefaultMode(ctx.cwd, modeSelected, true);
+          saveResults.push(r.success ? "global" : r.reason ?? "global-failed");
+        }
+
+        const displayMode = modeSelected === "strict" ? "🔒 Strict Mode" : modeSelected === "patterns" ? "🛡️ Patterns only" : "⚪ Disabled";
+        const successes = saveResults.filter(r => r === "local" || r === "global");
+        const failures = saveResults.filter(r => r !== "local" && r !== "global");
+
+        if (successes.length > 0) {
+          const scopeLabel = successes.length === 2
+            ? "both locally and globally"
+            : successes[0] === "local" ? "for this project (.pi/defender.yaml)" : "globally (~/.pi/defender.yaml)";
+          ctx.ui.notify(`💾 Saved default mode: ${displayMode} ${scopeLabel}. The selector will be skipped next session.`, "info");
+        }
+        if (failures.length > 0) {
+          ctx.ui.notify(`💾 Save error(s): ${failures.join(", ")}`, "error");
+        }
+        // Reload config to pick up any saved defaultMode
+        currentLoadedConfig = null;
+      }
+
+      ctx.ui.notify(
+        formatConfigTable(getLoadedConfig(ctx.cwd), DEFENDER_VERSION, strictMode, defenderDisabled, getFg(), getDimAnsi()),
+        "info",
+      );
     } catch {
       // Fallback if custom UI fails
       strictMode = true;
@@ -467,7 +576,7 @@ export default function (pi: ExtensionAPI) {
               const cmdMaxWidth = Math.max(1, width - 2); // "  " indent
               lines.push(theme.fg("warning", sep));
               lines.push(theme.fg("warning", theme.bold(` 🛡️🔒 Strict Mode — Bash Command${stepTag}`)));
-              const hintLine = `  ${theme.fg("muted","Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("muted", "to turn Strict Mode off and stop these prompts.")}`;
+              const hintLine = `  ${theme.fg("muted", "Run")}  ${theme.fg("mdLink", "/defender:strict off")} ${theme.fg("muted", "to turn Strict Mode off and stop these prompts.")}`;
               lines.push(truncateToWidth(hintLine, width));
               lines.push("");
               lines.push(theme.fg("warning", theme.bold(" Command:")));
@@ -654,7 +763,7 @@ export default function (pi: ExtensionAPI) {
 
         if (!ctx.hasUI) {
           stats.strictBlocked++;
-          ctx.ui.notify(`🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: blocked (no UI) — use /defender:strict off to disable`, "error");
+          ctx.ui.notify(`🛡️🔒 ${fg("warning", "Strict Mode")}: blocked (no UI) — use /defender:strict off to disable`, "error");
           return { block: true, reason: "Strict mode active — all bash commands require approval (no UI available)" };
         }
 
@@ -663,7 +772,7 @@ export default function (pi: ExtensionAPI) {
 
         if (choice === "deny") {
           stats.strictBlocked++;
-          ctx.ui.notify(`🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")}: denied — try something else`, "warning");
+          ctx.ui.notify(`🛡️🔒 ${fg("warning", "Strict Mode")}: denied — try something else`, "warning");
           return { block: true, reason: "Blocked by user in strict mode — try a different approach" };
         }
 
@@ -726,14 +835,14 @@ export default function (pi: ExtensionAPI) {
         const label = labels[d.type] || "✅ Approved";
         const cmdText = d.cmd.length > 35 ? d.cmd.slice(0, 32) + "..." : d.cmd;
         const prefix = `  ${label}: `;
-        lines.push(`${prefix}${savedTheme.fg("accent", cmdText)}`);
+        lines.push(`${prefix}${fg("accent", cmdText)}`);
         if (d.pattern) {
           const indent = " ".repeat(prefix.length - 9);
-          lines.push(`${indent}pattern: ${savedTheme.fg("mdLink", `${d.pattern}`)}`);
+          lines.push(`${indent}pattern: ${fg("mdLink", `${d.pattern}`)}`);
         }
       }
       ctx.ui.notify(
-        `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} actions:\n${lines.join("\n")}`,
+        `🛡️🔒 ${fg("warning", "Strict Mode")} actions:\n${lines.join("\n")}`,
         "info",
       );
     }
@@ -822,8 +931,19 @@ export default function (pi: ExtensionAPI) {
       const statsTable = formatStatsTable(st, sessionApprovedPatterns.length, getFg(), getDimAnsi());
       const configTable = formatConfigTable(loaded, DEFENDER_VERSION, strictMode, defenderDisabled, getFg(), getDimAnsi());
 
+      // Show defaultMode status
+      const defaultMode = loaded.config.defaultMode;
+      let defaultModeLine = "";
+      if (defaultMode && defaultMode !== "interactive") {
+        const icon = defaultMode === "strict" ? "🔒" : defaultMode === "patterns" ? "🛡️" : "⚪";
+        const label = defaultMode === "strict" ? "Strict ON" : defaultMode === "patterns" ? "Patterns only" : "Disabled";
+        defaultModeLine = `\n\n  Default mode: ${icon} ${label} (from config, selector skipped)`;
+      } else {
+        defaultModeLine = "\n\n  Default mode: not set (selector shown each session)";
+      }
+
       ctx.ui.notify(
-        configTable + "\n\n" + statsTable,
+        configTable + "\n\n" + statsTable + defaultModeLine,
         "info",
       );
     },
@@ -959,7 +1079,7 @@ export default function (pi: ExtensionAPI) {
           sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
-            `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} ACTIVATED (default) — ALL bash commands now require your approval\n` +
+            `🛡️🔒 ${fg("warning", "Strict Mode")} ACTIVATED (default) — ALL bash commands now require your approval\n` +
             "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Whitelist / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",
@@ -975,7 +1095,7 @@ export default function (pi: ExtensionAPI) {
           sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
-            `🛡️ ${savedTheme.fg("warning", "Strict Mode")} DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.`,
+            `🛡️ ${fg("warning", "Strict Mode")} DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.`,
             "info",
           );
         }
@@ -987,7 +1107,7 @@ export default function (pi: ExtensionAPI) {
           sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
-            `🛡️ ${savedTheme.fg("warning", "Strict Mode")} DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.`,
+            `🛡️ ${fg("warning", "Strict Mode")} DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.`,
             "info",
           );
         } else {
@@ -997,13 +1117,86 @@ export default function (pi: ExtensionAPI) {
           sessionApprovedPatterns.length = 0;
           aborted = false;
           ctx.ui.notify(
-            `🛡️🔒 ${savedTheme.fg("warning", "Strict Mode")} ACTIVATED (default) — ALL bash commands now require your approval\n` +
+            `🛡️🔒 ${fg("warning", "Strict Mode")} ACTIVATED (default) — ALL bash commands now require your approval\n` +
             "   • Select ✅ Approve / ⚠️ Deny / ⭐ Approve All / 📋 Whitelist / ❌ Abort\n" +
             "   • patterns.yaml blocked rules are ALWAYS enforced\n" +
             "   • /defender:strict off to disable",
             "info",
           );
         }
+      }
+    },
+  });
+
+  pi.registerCommand("defender:default-mode", {
+    description: "Set or reset the default protection mode (skip session-start selector)",
+    handler: async (args, ctx) => {
+      const loaded = getLoadedConfig(ctx.cwd);
+      const trimmedArgs = args.trim();
+
+      // No arguments — show current defaultMode + usage
+      if (!trimmedArgs) {
+        const current = loaded.config.defaultMode;
+        let status = "";
+        if (current && current !== "interactive") {
+          const icon = current === "strict" ? "🔒" : current === "patterns" ? "🛡️" : "⚪";
+          status = `\n  Current default mode: ${icon} ${current}`;
+        } else {
+          status = "\n  Current default mode: not set (selector shown each session)";
+        }
+        ctx.ui.notify(
+          `🛡️ Default mode${status}\n\n` +
+          "Usage:\n" +
+          "  /defender:default-mode strict     → 🔒 Strict ON (global)\n" +
+          "  /defender:default-mode patterns   → 🛡️ Patterns only (global)\n" +
+          "  /defender:default-mode off        → ⚪ Disable defender (global)\n" +
+          "  /defender:default-mode interactive → reset (show selector again)\n" +
+          "  /defender:default-mode strict --local → project-local (.pi/defender.yaml)\n" +
+          "\nUse /defender:status to see full config breakdown.",
+          "info",
+        );
+        return;
+      }
+
+      // Parse arguments: "strict --local" or "patterns" etc.
+      const parts = trimmedArgs.split(/\s+/);
+      const rawMode = parts[0].toLowerCase();
+      const isLocal = parts.includes("--local");
+
+      // Validate mode
+      if (!["strict", "patterns", "off", "interactive"].includes(rawMode)) {
+        ctx.ui.notify(
+          `🛡️ Unknown mode: "${rawMode}". Valid modes: strict, patterns, off, interactive.\n\n` +
+          "Use /defender:default-mode (no args) for usage.",
+          "warning",
+        );
+        return;
+      }
+
+      const mode: Config["defaultMode"] = rawMode as Config["defaultMode"];
+      const scopeLabel = isLocal ? "for this project (.pi/defender.yaml)" : "globally (~/.pi/defender.yaml)";
+
+      // Set the defaultMode
+      const saveResult = setDefaultMode(ctx.cwd, mode, !isLocal);
+      if (saveResult.success) {
+        // Reload config to pick up the change
+        currentLoadedConfig = null;
+
+        if (mode === "interactive") {
+          ctx.ui.notify(
+            `🛡️ Default mode reset to interactive. The session-start selector will be shown again.`,
+            "info",
+          );
+        } else {
+          const icon = mode === "strict" ? "🔒" : mode === "patterns" ? "🛡️" : "⚪";
+          const label = mode === "strict" ? "Strict ON" : mode === "patterns" ? "Patterns only" : "Disabled";
+          ctx.ui.notify(
+            `💾 Default mode set to ${icon} ${label} ${scopeLabel}. The selector will be skipped next session.`,
+            "info",
+          );
+        }
+      } else {
+        ctx.ui.notify(`💾 Failed to save: ${saveResult.reason}`, "error");
       }
     },
   });
@@ -1023,4 +1216,3 @@ export default function (pi: ExtensionAPI) {
 // =============================================================================
 // PATTERNS YAML TEMPLATE
 // =============================================================================
-

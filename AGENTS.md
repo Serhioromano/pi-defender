@@ -52,9 +52,19 @@ pi.on("tool_call") 3 handlers registered:
                          Reads allowed during abort for diagnostics
 
 pi.on("session_start") → runs `ensurePatternsConfig` (idempotent deploy)
-    → shows protection-level selector:
+    → checks `defaultMode` from merged config:
+      - If set (and not "interactive"), skips the selector entirely
+        and applies the mode directly (strict/patterns/off)
+      - Shows config table notification instead
+    → If no defaultMode or "interactive", shows protection-level selector:
     🔒 Strict Mode ON (default) | 🛡️ Patterns only | ⚪ Disable Defender
-    After selection, displays a config table breaking down which rules
+    ───────────────────────────────
+    💾 Save choice for this project → writes defaultMode to .pi/defender.yaml
+    🌐 Save choice forever (global) → writes defaultMode to ~/.pi/defender.yaml
+    The save options remember the last-highlighted mode via `lastModeIndex` closure
+    variable. Number keys `4` and `5` activate the save options with the current
+    mode. When a mode option is highlighted, save options render dimmed.
+    After selection (or save), displays a config table breaking down which rules
     come from which source (.pi/patterns.yaml, ~/.pi/patterns.yaml,
     .pi/defender.yaml, ~/.pi/defender.yaml). Uses Unicode box-drawing
     characters: ┌─...─┐ ├─...─┤ └─...─┘ with columns: Pat, Zero, ROnly, NDel, Wlst.
@@ -81,6 +91,25 @@ pi.on("session_shutdown") → clears cached config, aborted flag, session-approv
 4. Checks if command deletes `noDeletePaths` (delete patterns only)
 
 Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
+
+### Default mode (config.ts)
+
+`defaultMode` is an optional top-level config key (in any YAML file) that
+skips the session-start interactive selector and goes directly to the
+specified mode. Values: `strict` (🔒 Strict ON), `patterns` (🛡️ Patterns only),
+`off` (⚪ Disable Defender), `interactive` (show selector — same as omitting).
+
+When merged across multiple files, uses **first-wins** semantics (the first
+non-undefined value wins). `getConfigPaths()` loads local `.pi/defender.yaml`
+before global `~/.pi/defender.yaml`, so project-local settings always override
+global ones. Typically placed in `.pi/defender.yaml` (user, never overwritten)
+to persist across updates.
+
+**setDefaultMode(cwd, mode, global_)** — Helper in config.ts that writes
+`defaultMode` to either `.pi/defender.yaml` (local) or `~/.pi/defender.yaml`
+(global). Creates the file and directory if needed, preserving existing keys.
+Returns `{ success, path, reason? }`. Used by the session-start selector save
+options and the `/defender:default-mode` command.
 
 ### Config loading (config.ts:loadConfig)
 
@@ -251,10 +280,11 @@ A **150ms delay** runs between sub-command selectors to prevent TUI race conditi
 
 | Command | Handler |
 |---|---|
-| `/defender:status` | Shows stats + config table |
+| `/defender:status` | Shows stats + config table + defaultMode status |
 | `/defender:reload` | Clears cached config, reloads from YAML, shows table |
 | `/defender:patterns` | Copies bundled essential patterns to `.pi/patterns.yaml` (idempotent) |
 | `/defender:strict [on\|off]` | Toggles strict mode (ON by default, resets session-approved/aborted) |
+| `/defender:default-mode` | Set/reset default mode (skip session-start selector). No args = show help. Args: `strict`/`patterns`/`off`/`interactive` (+ optional `--local` for project-scoped) |
 | `/defender:globalize-whitelist` | Copies unique local whitelist patterns from `.pi/defender.yaml` to `~/.pi/defender.yaml` |
 | `/defender:report-issue <description>` | AI-powered: analyzes raw message (bug/feature), enhances description, creates GitHub issue via custom tool (REST API, no gh CLI needed) |
 
