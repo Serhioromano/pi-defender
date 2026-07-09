@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [Unreleased]
+## [v1.7.3]
 
 - `fix` - **Harden `pi_defender_create_issue` tool against misuse**: The tool is EXCLUSIVE to `/defender:report-issue` and creates issues only on `Serhioromano/pi-defender`. Updated tool `description`, `promptGuidelines`, `promptSnippet`, and `AGENTS.md` to explicitly forbid using this tool for any other repository or purpose. AI agents must use `gh issue create` CLI for issues on other repos.
 
