@@ -13,7 +13,11 @@ Defense-in-depth protection for [Pi](https://github.com/badlogic/pi-mono) — in
 pi install npm:pi-defender
 ```
 
-That's it. Pi Defender activates on your next session with **Strict Mode ON** by default — every bash command requires your approval.
+The next time you start Pi agent, a **protection-level selector** appears — choose your mode for the session:
+
+- 🔒 **Strict Mode** (default) — every bash command requires approval
+- 🛡️ **Patterns only** — only dangerous commands trigger prompts
+- ⚪ **Disable Defender** — no protection for this session
 
 ## Features
 
@@ -48,7 +52,7 @@ Pi Defender merges rules from up to 4 YAML files:
 
 | File | Overwritten on update? | Purpose |
 |------|----------------------|---------|
-| `.pi/patterns.yaml` | ✅ Yes | Bundled security rules (shipped) |
+| `.pi/patterns.yaml` | ✅ Yes | Bundled security rules (local installs only) |
 | `~/.pi/patterns.yaml` | ✅ Yes | Bundled security rules (global) |
 | `.pi/defender.yaml` | ❌ Never | Your custom patterns + whitelist |
 | `~/.pi/defender.yaml` | ❌ Never | Your custom patterns + whitelist (global) |
