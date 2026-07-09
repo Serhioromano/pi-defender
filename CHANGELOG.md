@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [Unreleased]
+## [v1.7.0]
 
 - `add` - **`/defender:report-issue` command + `pi_defender_create_issue` tool (#7)**: AI-powered issue reporting that works without `gh` CLI. The command accepts a raw description, collects diagnostics (version, stats, config table), then uses `pi.sendUserMessage()` to delegate to the AI. The AI analyzes the message (detects bug vs feature), enhances title/description, and calls the `pi_defender_create_issue` custom tool — which uses `fetch()` to call the GitHub REST API directly. Token resolution is multi-source: `GH_TOKEN`/`GITHUB_TOKEN` env vars → `gh auth token` → `~/.config/gh/hosts.yml` parsing. Registers the tool during extension load so it's always available to the LLM.
 
