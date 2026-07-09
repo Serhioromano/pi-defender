@@ -275,6 +275,10 @@ A **150ms delay** runs between sub-command selectors to prevent TUI race conditi
 - `ctx.ui.confirm(title, message)` → `boolean` — yes/no prompts
 - `ctx.ui.custom(callback)` → `T` — custom TUI components (SelectList-style)
 - `pi.registerTool(definition)` — custom tools callable by the LLM (e.g., `pi_defender_create_issue` for GitHub REST API)
+
+## Important restrictions
+
+- **`pi_defender_create_issue`** is EXCLUSIVELY for `/defender:report-issue`. It creates issues ONLY on `Serhioromano/pi-defender`. NEVER use it to create issues on other repositories — use `gh issue create` or the GitHub MCP tools instead. NEVER call this tool unless the user explicitly invoked `/defender:report-issue` or the follow-up message from that command explicitly instructs the agent to call it.
 - `pi.sendUserMessage(content, options?)` — queue user messages for the agent in follow-up turns
 - `ctx.hasUI` → `boolean` — TUI availability
 - `ctx.cwd` → `string` — working directory

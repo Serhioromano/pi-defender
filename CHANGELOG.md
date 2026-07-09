@@ -2,6 +2,10 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [Unreleased]
+
+- `fix` - **Harden `pi_defender_create_issue` tool against misuse**: The tool is EXCLUSIVE to `/defender:report-issue` and creates issues only on `Serhioromano/pi-defender`. Updated tool `description`, `promptGuidelines`, `promptSnippet`, and `AGENTS.md` to explicitly forbid using this tool for any other repository or purpose. AI agents must use `gh issue create` CLI for issues on other repos.
+
 ## [v1.7.1]
 
 - `docs` - **README overhaul**: Cut from ~350 lines to ~120. Removed implementation details already covered in `AGENTS.md` (selector internals, chain splitting algorithms, TUI rendering safety, keyboard protocol handling, theme saving mechanics, session-approved pattern lifecycle). Replaced with scannable feature descriptions, quick-start install, essential commands, and a minimal config example. Focused on what an end user actually needs.

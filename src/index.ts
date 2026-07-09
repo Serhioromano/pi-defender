@@ -16,7 +16,7 @@
  *   - Strict mode whitelist: auto-approve remembered commands
  *   - YAML configuration (project-local or global)
  *   - Management commands: /defender:reload, /defender:status, /defender:patterns, /defender:strict, /defender:report-issue
- *   - Custom tool: pi_defender_create_issue — creates GitHub issues via REST API (no gh CLI needed)
+ *   - Custom tool: pi_defender_create_issue — creates GitHub issues via REST API (ONLY for Serhioromano/pi-defender, ONLY via /defender:report-issue)
  *
  * Previously: pi-damage-control
  * Inspired by: https://github.com/disler/claude-code-damage-control
@@ -111,12 +111,15 @@ export default function (pi: ExtensionAPI) {
     name: "pi_defender_create_issue",
     label: "Create GitHub Issue",
     description:
-      "Create a GitHub issue on the Serhioromano/pi-defender repository. " +
+      "EXCLUSIVE to /defender:report-issue — creates a GitHub issue on the Serhioromano/pi-defender repository ONLY. " +
+      "Never use for other repositories (use gh CLI instead). " +
       "Uses the GitHub REST API — no gh CLI required. " +
       "Requires a GitHub token from GH_TOKEN, GITHUB_TOKEN, or gh auth.",
-    promptSnippet: "Create a GitHub issue on Serhioromano/pi-defender",
+    promptSnippet: "Create a GitHub issue on Serhioromano/pi-defender (ONLY via /defender:report-issue)",
     promptGuidelines: [
-      "Use pi_defender_create_issue when the user asks to report an issue for Pi Defender. " +
+      "pi_defender_create_issue creates issues ONLY on Serhioromano/pi-defender repository. " +
+      "NEVER use this tool unless explicitly instructed by the /defender:report-issue follow-up message. " +
+      "For issues on ANY other repository, use `gh issue create` CLI instead. " +
       "The label should be 'bug' for bugs or 'enhancement' for feature requests.",
     ],
     parameters: Type.Object({
