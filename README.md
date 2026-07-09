@@ -1,469 +1,102 @@
 # Pi Defender 🛡️
 
 > [!WARNING]
-> This extension is provided "as is", without warranty of any kind. The author assumes no liability for damages or data loss resulting from its use. Use at your own risk.
->
-> For maximum data security, always maintain up-to-date backups of your work.
+> This extension is provided "as is", without warranty of any kind. The author assumes no liability for damages or data loss resulting from its use. Always maintain up-to-date backups.
 
-Defense-in-depth protection for [Pi](https://github.com/badlogic/pi-mono) coding agent. Blocks dangerous commands and protects sensitive files — a Pi port of [claude-code-damage-control](https://github.com/disler/claude-code-damage-control). Previously published as `pi-damage-control`.
+Defense-in-depth protection for [Pi](https://github.com/badlogic/pi-mono) — intercepts dangerous bash commands and file operations before they execute. Ported from [claude-code-damage-control](https://github.com/disler/claude-code-damage-control).
 
 <img width="800" alt="Pi Defender" src="https://raw.githubusercontent.com/Serhioromano/pi-defender/refs/heads/master/images/pi-defender.png">
 
-> Inspired by [disler/claude-code-damage-control](https://github.com/disler/claude-code-damage-control)!
-
-
-## Features
-
-### 🔒 Bash Command Protection
-Regex patterns to block dangerous commands before execution. Instead of auto-blocking, shows a selector:
-- ⚠️ **Allow anyway** — run the dangerous command despite the warning
-- ❌ **Deny & Abort** — cancels the agent's turn immediately + blocks all bash and file writes until reset
-
-| Category | Examples |
-|----------|----------|
-| Destructive file ops | `rm -rf`, `find -delete` |
-| Privilege escalation | `sudo`, `su -` |
-| Database destruction | `DROP TABLE`, `DELETE FROM x;` (no WHERE) |
-| Git force ops | `git push --force`, `git reset --hard` |
-| Network attacks | `curl \| bash`, `wget \| sh` |
-| Disk destruction | `dd if=`, `mkfs.*` |
-| Docker hazards | `docker rm -f`, `docker system prune` |
-| Package unpublish | `npm unpublish` |
-| Permission danger | `chmod 777`, `chown -R` |
-| System shutdown | `reboot`, `shutdown`, `halt` |
-
-### 🛡️ Path Protection (3 levels)
-
-| Level | Read | Write/Edit | Delete | Use for |
-|-------|------|------------|--------|---------|
-| **zeroAccess** | ❌ | ❌ | ❌ | Secrets, keys, credentials |
-| **readOnly** | ✅ | ❌ | ❌ | System files, lockfiles |
-| **noDelete** | ✅ | ✅ | ❌ | Important project files |
-
-### ⚠️ Ask Mode
-For destructive-but-valid commands (`git push --force`, `git push --delete`, `npm unpublish`), instead of blocking outright, the extension shows a confirmation dialog. You decide.
-
-### 🔒 Strict Mode (ON by default)
-Block ALL bash tool execution and require explicit user approval for every command. Perfect when you want to review every action the agent takes.
-
-- **ON by default** — you get protection out of the box. Use `/defender:strict off` to disable.
-- **Selector UI**: Arrow-key navigable selector with 5 options per command:
-  - ✅ **Approve** — run this command once
-  - ⚠️ **Deny (try something else)** — block this command, agent can try alternative approach
-  - ⭐ **Approve All** — auto-approve future occurrences of THIS specific command (session-scoped, cleared on next prompt)
-  - 📋 **Allow & Whitelist** — remember this command pattern for future sessions
-  - ❌ **Abort (stop all execution)** — block this command AND lock all future bash commands until reset
-- **patterns.yaml always enforced**: Commands matching blocked patterns are never allowed, even with approve-all or whitelist
-- **Number key shortcuts**: Press `1`-`N` to instantly select any option — faster than arrow keys
-- **Whitelist**: Save trusted commands to `.pi/defender.yaml` for persistent auto-approval across sessions
-- Toggle with `/defender:strict` (on|off, or no parameter to toggle)
-- Shows 🛡️🔒 badge when active
-- **Config table on session start**: Instead of a one-line summary, Pi Defender now displays a table breaking down which rules come from which file:
-  ```
-  🛡️  Pi Defender v1.5.0  —  🔒 Strict Mode ON
-
-    Rules loaded:
-    ┌────────────────────────────────────────────────────────┐
-    │ Source                    Pat  Zero  ROnly  NDel  Wlst │
-    ├────────────────────────────────────────────────────────┤
-    │ .pi/patterns.yaml          22    23     24     9     0 │
-    │ ~/.pi/patterns.yaml     — not found —                 │
-    │ .pi/defender.yaml           0     0      0     0     5 │
-    │ ~/.pi/defender.yaml      — not found —                 │
-    ├────────────────────────────────────────────────────────┤
-    │ TOTAL (merged)             22    23     24     9     5 │
-    └────────────────────────────────────────────────────────┘
-  ```
-
-### 🎯 Protection targets
-- **Bash tool**: command patterns + path references in commands
-- **Write tool**: path check against zeroAccess and readOnly
-- **Edit tool**: path check against zeroAccess and readOnly
-- **Read tool**: path check against zeroAccess
-
-## Quick Start
-
-### Option 1: Install as Pi package
+## Install
 
 ```bash
 pi install npm:pi-defender
 ```
 
-### Option 2: Manual (project-local)
+That's it. Pi Defender activates on your next session with **Strict Mode ON** by default — every bash command requires your approval.
 
-```bash
-mkdir -p .pi/extensions
-curl -o .pi/extensions/defender.ts https://raw.githubusercontent.com/Serhioromano/pi-defender/main/src/index.ts
-# Also copy config.ts and place patterns.yaml in .pi/defender/
-```
+## Features
 
-### Option 3: Global
+**🛡️ Three layers of protection:**
 
-```bash
-mkdir -p ~/.pi/agent/extensions/pi-defender
-cd ~/.pi/agent/extensions/pi-defender
-curl -L -O https://raw.githubusercontent.com/Serhioromano/pi-defender/main/package.json
-mkdir src
-curl -o src/index.ts https://raw.githubusercontent.com/Serhioromano/pi-defender/main/src/index.ts
-curl -o src/config.ts https://raw.githubusercontent.com/Serhioromano/pi-defender/main/src/config.ts
-npm install
-```
+| Layer | What it does |
+|-------|-------------|
+| **Pattern blocking** | Dangerous commands (`rm -rf`, `sudo`, `curl \| bash`, `DROP TABLE`, `dd if=`, `chmod 777`, `git push --force`) are intercepted with an ⚠️ Allow / ❌ Deny selector |
+| **Path protection** | Sensitive paths are guarded at 3 levels: `zeroAccess` (no read/write/delete — secrets, keys), `readOnly` (write/edit blocked — system files), `noDelete` (delete blocked — project docs) |
+| **Strict Mode** 🔒 | Every bash command requires explicit approval via arrow-key selector. Whitelist trusted commands to auto-approve them across sessions |
 
-## Configuration
+**TUI selector with keyboard shortcuts** — press `1`-`N` to instantly choose: Approve, Deny, Whitelist, Approve All, or Abort.
 
-Defender loads rules from 4 files (all optional, all merged):
+**Chained commands** — `cmd1 && cmd2 || cmd3` are split and each sub-command approved individually. Deny/Abort on any sub-command blocks the entire chain.
 
-| File | Overwritten on install? | Purpose |
-|------|--------------------------|---------|
-| `.pi/patterns.yaml` | ✅ Yes | Essential security rules (shipped) |
-| `~/.pi/patterns.yaml` | ✅ Yes | Essential security rules (global) |
-| `.pi/defender.yaml` | ❌ **Never** | Your custom patterns + whitelist |
-| `~/.pi/defender.yaml` | ❌ **Never** | Your custom patterns + whitelist (global) |
-
-**On session start**, a table shows exactly which files were found and what each contributed:
-
-```
-🛡️  Pi Defender v1.5.0  —  🔒 Strict Mode ON
-
-  Rules loaded:
-  ┌────────────────────────────────────────────────────────┐
-  │ Source                    Pat  Zero  ROnly  NDel  Wlst │
-  ├────────────────────────────────────────────────────────┤
-  │ .pi/patterns.yaml          22    23     24     9     0 │
-  │ ~/.pi/patterns.yaml     — not found —                 │
-  │ .pi/defender.yaml           0     0      0     0     5 │
-  │ ~/.pi/defender.yaml      — not found —                 │
-  ├────────────────────────────────────────────────────────┤
-  │ TOTAL (merged)             22    23     24     9     5 │
-  └────────────────────────────────────────────────────────┘
-```
-
-**Column legend:**
-
-| Column | Meaning |
-|--------|---------|
-| **Pat** | `bashToolPatterns` — dangerous command patterns |
-| **Zero** | `zeroAccessPaths` — no read/write/delete allowed |
-| **ROnly** | `readOnlyPaths` — read OK, write/edit blocked |
-| **NDel** | `noDeletePaths` — read/write/edit OK, delete blocked |
-| **Wlst** | `strictModeWhiteList` — auto-approved commands (your whitelist) |
-
-### Initialize project config
-
-In your Pi session:
-
-```
-/defender:patterns
-```
-
-This copies the bundled `src/patterns.yaml` into `.pi/defender/patterns.yaml`. Edit it to customize.
-
-### patterns.yaml structure
-
-```yaml
-bashToolPatterns:
-  - pattern: '\brm\s+-[rRf]'        # Block completely
-    reason: rm with recursive or force flags
-
-  - pattern: '\bgit\s+push\s+.*--force'  # Ask for confirmation
-    reason: git push --force
-    ask: true
-
-zeroAccessPaths:
-  - ~/.ssh/
-  - *.pem
-  - .env.production.local
-
-readOnlyPaths:
-  - /etc/
-  - *.lock
-  - ~/.bashrc
-
-noDeletePaths:
-  - .pi/
-  - LICENSE
-  - README.md
-
-strictModeWhiteList:
-  - npm\\ test
-  - npm\\ run\\ build
-  - git\\ status
-  - ls\\ -la
-```
-
-**Path pattern support:**
-- Literal paths: `~/.ssh/`, `/etc/`, `.pi/` — prefix matching
-- Glob patterns: `*.pem`, `*.lock`, `*-credentials.json` — fnmatch against basename and full path
-
-### Reload config
-
-```
-/defender:reload
-```
-
-### Check status
-
-```
-/defender:status
-```
-
-Shows: blocked/allowed/asked counts and active config summary.
-
-## Strict Mode
-
-Strict mode adds an extra layer of protection — **every** bash command must be explicitly approved.
-
-### ON by default
-
-Strict mode is **active from the first session**. You'll see:
-
-```
-🛡️ Defender vX.Y.Z active 🔒 Strict Mode ON (30 patterns, 18 zero-access, 24 read-only)
-```
-
-### Deactivate
-
-```
-/defender:strict off
-```
-
-### Re-activate
-
-If you turned it off, re-enable with:
-
-```
-/defender:strict on
-```
-
-You'll see: 🛡️🔒 Strict Mode ACTIVATED (default) — ALL bash commands now require your approval
-
-### Workflow
-
-When the agent tries to run a bash command, a selector appears with the command clearly displayed. **Chained commands** (using `&&`, `||`, `;`) are shell-aware split and each sub-command is approved individually — separators inside quoted strings (`'...'`, `"..."`, `` `...` ``) are preserved and not treated as chain breaks. You see exactly which command you're approving.
-
-**Single command:**
-```
-────────────────────────────────────────────────
- 🛡️🔒 Strict Mode — Bash Command
-
-  Run  /defender:strict off  to turn Strict Mode off and stop these prompts
-
- Command:
-  ls -la /some/path
-
- ▶ ✅ Approve this command
-   📋 Allow & Whitelist (remember for future)
-   ⭐ Approve ALL (auto-approve future occurrences of THIS command)
-   ⚠️ Deny (try something else)
-   ❌ Abort (stop all execution)
-
- ↑↓ navigate · 1-N select · enter confirm · esc deny
-────────────────────────────────────────────────
-```
-
-Press `1`-`5` to select an option instantly — much faster than arrow keys.
-
-**Chained command (e.g. `git add . && git commit -m "msg"`)** — *two separate selectors appear, one per sub-command.* First for `git add .`:
-```
- 🛡️🔒 Strict Mode — Bash Command (1/2)
-
- Command:
-  git add .
-
- ▶ ✅ Approve this command
-   ...
- ──────────────────────────────────────────────
-```
-Then for `git commit -m "fix: resolve path issue"`:
-```
- 🛡️🔒 Strict Mode — Bash Command (2/2)
-
- Command:
-  git commit -m "fix: resolve path issue"
-
- ▶ ✅ Approve this command
-   ...
- ──────────────────────────────────────────────
-```
-
-Each selector shows only the sub-command being approved — with an accent-colored **`Command:`** label and a step indicator like `(1/2)`. If you deny or abort any sub-command, the entire chain is blocked.
-
-### Approve All
-
-Selecting ⭐ **Approve All** adds the current command's regex pattern to an in-memory session-approved list. Future occurrences of the **same command** during the current prompt are auto-approved — no more prompts for that command. This is session-scoped (not persisted to YAML) and cleared when a new prompt starts. `patterns.yaml` blocked rules (like `rm -rf`, `sudo`, etc.) are **always** enforced regardless.
-
-### Abort
-
-Selecting ❌ **Abort (stop all execution)** blocks the current command AND locks down all future bash commands. The agent cannot execute any more bash commands until you reset with:
-
-```
-/defender:strict off
-```
-
-This is useful when the agent is going in a wrong direction and you want to stop it completely.
-
-### Whitelist
-
-When strict mode prompts you for a command you trust (like `npm test` or `git status`), select 📋 **Allow & Whitelist** to save a regex pattern for it. Future runs of the same command are auto-approved — no prompt needed.
-
-- Pattern is saved to `.pi/defender.yaml` under `strictModeWhiteList`
-- The file is created automatically if it doesn't exist
-- Duplicate patterns are detected and not re-added
-- When a whitelisted command runs, a notification shows which pattern matched
-- **Patterns extract only the tool identity** — base command + subcommand for meta-tools (git, npm, npx, docker, etc.) — stripping all parameters, flags, paths, and directories:
-  - `find . -name "*.ts"` → `^find\b`
-  - `git diff HEAD~1` → `^git diff\b`
-  - `npx tsc --noEmit` → `^npx tsc\b`
-  - `npm run build` → `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b` (3-level, flag-tolerant — never generates `^npm run\b`)
-  - `grep -n "pat" file` → `^grep\b`
-  - `ls -la /tmp` → `^ls\b`
-- The `^...\b` anchors ensure precise matching: `^find\b` matches `find` but not `findmnt` or `find . -name`
-- Patterns are JS regex — you can manually edit `.pi/defender.yaml` to refine them (e.g. add flags: `^grep -n\b`)
-
-### Deactivate
-
-```
-/defender:strict off
-```
-
-You'll see: 🛡️ Strict Mode DEACTIVATED — normal protection restored (patterns.yaml rules only). Use /defender:strict on to re-enable.
-
-Or toggle without a parameter:
-
-```
-/defender:strict
-```
-
-### Status
-
-`/defender:status` shows strict mode state and per-mode statistics:
-
-```
-🛡️ Defender Stats
-  Allowed: 42 | Blocked: 3 | Asked: 2
-  Strict mode: 🔒 ACTIVE (default) (approve-all session)
-  Strict: 15 approved | 2 blocked | 1 approve-all
-  ...
-```
-
-## What Gets Blocked / Prompted
-
-### Bash commands matching patterns.yaml:
-- Instead of auto-blocking, shows a **selector**: ⚠️ Allow anyway / ❌ Deny & Abort
-- **Deny cancels the agent's turn** via `ctx.abort()` — the agent cannot try alternative approaches
-- All future bash + file writes/edits blocked until `/defender:strict off`
-- Patterns checked: `bashToolPatterns` regex matches, `zeroAccessPaths` references, `readOnlyPaths`/`noDeletePaths` operations
-
-### Bash commands referencing paths:
-
-### Edit/Write blocked:
-- Any path matching `zeroAccessPaths`
-- Any path matching `readOnlyPaths`
-
-### Read blocked:
-- Any path matching `zeroAccessPaths`
+**Abort protection** — selecting ❌ Abort calls `ctx.abort()` to cancel the agent's turn and locks all future bash + file writes until you run `/defender:strict off`.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `/defender:status` | Show statistics, strict mode status, and active config |
-| `/defender:reload` | Reload YAML configuration |
-| `/defender:patterns` | Initialize project-local patterns.yaml |
-| `/defender:strict [on|off]` | Toggle strict mode (blocks all bash, user approval required) |
-| `/defender:globalize-whitelist` | Copy unique local whitelist patterns to global defender.yaml |
-| `/defender:report-issue <description>` | AI analyzes, enhances, and creates a GitHub issue with diagnostics |
+| `/defender:status` | Show stats, strict mode state, and config table |
+| `/defender:reload` | Reload YAML config after editing |
+| `/defender:patterns` | Initialize `.pi/patterns.yaml` with bundled defaults |
+| `/defender:strict [on\|off]` | Toggle strict mode (ON by default) |
+| `/defender:globalize-whitelist` | Copy unique local whitelist patterns to `~/.pi/defender.yaml` |
+| `/defender:report-issue <desc>` | AI-enhanced bug/feature report → GitHub issue |
 
-### Reporting Issues
+## Configuration
 
-When you find a bug or want to request a feature, use `/defender:report-issue` with a brief description. The AI agent will:
+Pi Defender merges rules from up to 4 YAML files:
 
-1. **Analyze** your message — detect if it's a bug report or feature request
-2. **Enhance** the description with clarity, context, and steps to reproduce
-3. **Create** the GitHub issue with the enhanced title/description + automatic diagnostics
+| File | Overwritten on update? | Purpose |
+|------|----------------------|---------|
+| `.pi/patterns.yaml` | ✅ Yes | Bundled security rules (shipped) |
+| `~/.pi/patterns.yaml` | ✅ Yes | Bundled security rules (global) |
+| `.pi/defender.yaml` | ❌ Never | Your custom patterns + whitelist |
+| `~/.pi/defender.yaml` | ❌ Never | Your custom patterns + whitelist (global) |
 
-```
-/defender:report-issue The strict mode prompt doesn't appear on WSL. I'm using VS Code and Kitty protocol is active.
-```
+All 4 are merged — no file overrides another. On session start, a config table shows what each file contributed.
 
-The command collects diagnostics (version, session stats, config table) and delegates to the AI agent via `pi.sendUserMessage()`. The AI calls the built-in `pi_defender_create_issue` tool which uses the **GitHub REST API directly** — no `gh` CLI required.
+### Adding patterns
 
-**GitHub authentication** — the tool finds a token from any of these sources (tried in order):
-1. `GH_TOKEN` environment variable
-2. `GITHUB_TOKEN` environment variable
-3. `gh auth token` (if gh CLI is installed)
-4. `~/.config/gh/hosts.yml` (gh CLI config file)
+Your custom rules go in `.pi/defender.yaml` (never overwritten on updates):
 
-If no token is found, the AI will tell you to set `GH_TOKEN` or install `gh`.
+```yaml
+# Block a custom command
+bashToolPatterns:
+  - pattern: '\bdangerous-tool\b'
+    reason: Internal tool — never run via agent
 
-## Directory Structure
+# Add paths to protect
+zeroAccessPaths:
+  - .env.production
+  - *.pem
 
-```
-pi-defender/
-├── package.json           # npm package + pi extension manifest
-├── src/
-│   ├── index.ts           # Extension entry point
-│   ├── config.ts          # Config loading, pattern matching, path checking
-│   └── patterns.yaml      # Single source of truth — bundled defaults
-├── README.md
-├── CHANGELOG.md
-└── LICENSE
-```
-
-**Installed locations:**
-```
-~/.pi/patterns.yaml     # Global config
-.pi/patterns.yaml       # Project config
+# Trusted commands (skip strict mode prompts)
+strictModeWhiteList:
+  - ^npm\s+test\b
+  - ^npm\s+run\sbuild\b
+  - ^git\s+status\b
 ```
 
-## How It Works
+### Whitelist from strict mode
 
-Pi extensions subscribe to the `tool_call` event, which fires before any tool execution. The extension:
+When strict mode prompts for a command you trust (e.g. `npm test`), select 📋 **Whitelist** to save it permanently. The pattern is written to `.pi/defender.yaml` under `strictModeWhiteList` — future runs auto-approve.
 
-1. **Bash tool**: Parses the command string, checks against regex patterns and path references
-2. **Write/Edit tools**: Extracts the file path, checks against zeroAccess/readOnly lists
-3. **Read tool**: Extracts the file path, checks against zeroAccess list
+## Quick Commands to Try
 
-Blocked tools return `{ block: true, reason: "..." }` which Pi displays to the user.
-
-Ask-mode patterns show a confirmation dialog via `ctx.ui.confirm()`.
-
-## Testing
-
-After installing, try these prompts in Pi:
+After install, test protection in a Pi session:
 
 ```
+# Should block (rm with force flag)
 > Run: rm -rf /tmp/test
-```
-Should block (rm with force flag).
 
-```
+# Should prompt for confirmation
 > Run: git push --force origin main
-```
-Should prompt for confirmation.
 
-```
+# Should block (system path)
 > Write a file to /etc/hosts
-```
-Should block (system path).
 
-```
+# Should block (zero-access)
 > Read ~/.ssh/id_rsa
-```
-Should block (zero-access).
-
-## Development
-
-```bash
-# Clone
-gh repo clone Serhioromano/pi-defender
-cd pi-defender
-
-# Install deps
-npm install
-
-# Test with Pi
-pi -e src/index.ts
 ```
 
 ## License
@@ -472,4 +105,4 @@ MIT — see [LICENSE](LICENSE)
 
 ## Credits
 
-Previously published as [pi-damage-control](https://github.com/Serhioromano/pi-damage-control). Inspired by and ported from [claude-code-damage-control](https://github.com/disler/claude-code-damage-control) by [disler](https://github.com/disler). Adapted for Pi's native TypeScript extension API.
+Previously published as [pi-damage-control](https://github.com/Serhioromano/pi-damage-control). Inspired by [claude-code-damage-control](https://github.com/disler/claude-code-damage-control) by [disler](https://github.com/disler).
