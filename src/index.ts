@@ -27,7 +27,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, decodeKittyPrintable, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, splitChainCommands, formatConfigTable, formatStatsTable, mergeWhitelistToGlobal, setDefaultMode, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
+import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, stripCommentLines, splitChainCommands, formatConfigTable, formatStatsTable, mergeWhitelistToGlobal, setDefaultMode, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -418,17 +418,21 @@ export default function (pi: ExtensionAPI) {
   /**
    * Check if a command matches any session-approved (approve-all) pattern.
    * Works the same as checkWhitelist but against in-memory sessionApprovedPatterns.
+   * Shell comment lines (#-prefixed) are stripped before matching.
    */
   function checkSessionApproved(command: string, patterns: string[]): { matched: boolean } {
     const subCommands = splitChainCommands(command);
     if (subCommands.length === 0) return { matched: false };
 
     for (const sub of subCommands) {
+      // Strip comment lines before matching — ensures "Approve All" patterns
+      // work even when the command is re-sent with # comment lines.
+      const matchTarget = stripCommentLines(sub);
       let subMatched = false;
       for (const pattern of patterns) {
         try {
           const regex = new RegExp(pattern, "i");
-          if (regex.test(sub)) {
+          if (regex.test(matchTarget)) {
             subMatched = true;
             break;
           }

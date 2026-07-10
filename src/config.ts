@@ -334,11 +334,15 @@ export function checkPathPatterns(
 // =============================================================================
 
 export function checkCommand(command: string, config: Config): CheckResult {
+  // Strip comment lines for pattern matching — #-prefixed lines are shell
+  // comments and shouldn't affect whether the actual command matches a pattern.
+  const matchTarget = stripCommentLines(command);
+
   // 1. Check against patterns from YAML (may block or ask)
   for (const { pattern, reason } of config.bashToolPatterns) {
     try {
       const regex = new RegExp(pattern, "i");
-      if (regex.test(command)) {
+      if (regex.test(matchTarget)) {
         return { blocked: true,  reason: `Blocked: ${reason}` };
       }
     } catch {
@@ -352,7 +356,7 @@ export function checkCommand(command: string, config: Config): CheckResult {
       const globRegex = globToRegex(zeroPath);
       try {
         const regex = new RegExp(globRegex, "i");
-        if (regex.test(command)) {
+        if (regex.test(matchTarget)) {
           return {
             blocked: true,
             reason: `Blocked: zero-access pattern ${zeroPath} (no operations allowed)`,
@@ -363,7 +367,7 @@ export function checkCommand(command: string, config: Config): CheckResult {
       }
     } else {
       const expanded = zeroPath.replace(/^~/, homedir());
-      if (command.includes(expanded) || command.includes(zeroPath)) {
+      if (matchTarget.includes(expanded) || matchTarget.includes(zeroPath)) {
         return {
           blocked: true,
           reason: `Blocked: zero-access path ${zeroPath} (no operations allowed)`,
@@ -374,7 +378,7 @@ export function checkCommand(command: string, config: Config): CheckResult {
 
   // 3. Check for modifications to read-only paths (reads allowed)
   for (const readonlyPath of config.readOnlyPaths) {
-    const result = checkPathPatterns(command, readonlyPath, READ_ONLY_BLOCKED, "read-only path");
+    const result = checkPathPatterns(matchTarget, readonlyPath, READ_ONLY_BLOCKED, "read-only path");
     if (result.blocked) {
       return { ...result};
     }
@@ -382,7 +386,7 @@ export function checkCommand(command: string, config: Config): CheckResult {
 
   // 4. Check for deletions on no-delete paths (read/write/edit allowed)
   for (const noDeletePath of config.noDeletePaths) {
-    const result = checkPathPatterns(command, noDeletePath, NO_DELETE_BLOCKED, "no-delete path");
+    const result = checkPathPatterns(matchTarget, noDeletePath, NO_DELETE_BLOCKED, "no-delete path");
     if (result.blocked) {
       return { ...result};
     }
@@ -392,11 +396,45 @@ export function checkCommand(command: string, config: Config): CheckResult {
 }
 
 // =============================================================================
+// COMMENT LINE STRIPPING
+// =============================================================================
+
+/**
+ * Strip shell comment lines (lines starting with # after optional whitespace)
+ * from a bash command string. Inline comments (where # appears after a command
+ * on the same line) are preserved because they don't affect pattern matching.
+ *
+ * Only whole-line comments are removed — a line that starts with # (possibly
+ * indented) is dropped entirely. Lines with # mid-line are kept as-is.
+ *
+ * Examples:
+ *   "# comment\nls -la"              → "ls -la"
+ *   "  # comment\n  ls -la"          → "ls -la"
+ *   "ls -la # inline comment"         → "ls -la # inline comment" (unchanged)
+ *   "# line1\n# line2\nssh root@..." → "ssh root@..."
+ */
+export function stripCommentLines(command: string): string {
+  const lines = command.split("\n");
+  const result: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    // Only strip if the ENTIRE line is a comment (starts with #)
+    if (!trimmed.startsWith("#")) {
+      result.push(line);
+    }
+  }
+
+  return result.join("\n").trim();
+}
+
+// =============================================================================
 // CHAIN COMMAND SPLITTING
 // =============================================================================
 
 /**
  * Split a bash command string into individual commands by chain separators.
+ * Each sub-command has shell comment lines stripped before being returned.
  * Recognized separators: &&, ||, ;
  * Pipes (|) are NOT treated as chain separators — they form a single pipeline.
  *
@@ -484,7 +522,7 @@ export function splitChainCommands(command: string): string[] {
     // === Check for chain separator: && ===
     if (ch === "&" && i + 1 < command.length && command[i + 1] === "&") {
       const trimmed = current.trim();
-      if (trimmed.length > 0) result.push(trimmed);
+      if (trimmed.length > 0) result.push(stripCommentLines(trimmed));
       current = "";
       i += 2;
       continue;
@@ -493,7 +531,7 @@ export function splitChainCommands(command: string): string[] {
     // === Check for chain separator: || ===
     if (ch === "|" && i + 1 < command.length && command[i + 1] === "|") {
       const trimmed = current.trim();
-      if (trimmed.length > 0) result.push(trimmed);
+      if (trimmed.length > 0) result.push(stripCommentLines(trimmed));
       current = "";
       i += 2;
       continue;
@@ -502,7 +540,7 @@ export function splitChainCommands(command: string): string[] {
     // === Check for chain separator: ; ===
     if (ch === ";") {
       const trimmed = current.trim();
-      if (trimmed.length > 0) result.push(trimmed);
+      if (trimmed.length > 0) result.push(stripCommentLines(trimmed));
       current = "";
       i++;
       continue;
@@ -515,9 +553,10 @@ export function splitChainCommands(command: string): string[] {
 
   // Push remaining text
   const trimmed = current.trim();
-  if (trimmed.length > 0) result.push(trimmed);
+  if (trimmed.length > 0) result.push(stripCommentLines(trimmed));
 
-  return result;
+  // Filter out any sub-commands that became empty after stripping comments
+  return result.filter(cmd => cmd.length > 0);
 }
 
 // =============================================================================
@@ -528,6 +567,10 @@ export function splitChainCommands(command: string): string[] {
  * Check if ALL sub-commands in a (possibly chained) command are whitelisted.
  * For a chain like "git add . && git commit -m 'msg'", BOTH sub-commands
  * must individually match a whitelist pattern for the whole chain to pass.
+ *
+ * Shell comment lines (#-prefixed) are stripped from each sub-command
+ * before matching, so commands like "# comment\nssh root@..." match
+ * whitelist patterns written for the actual command.
  *
  * Returns the matching pattern for single commands, or a summary for chains.
  */
@@ -541,11 +584,14 @@ export function checkWhitelist(command: string, config: Config): { matched: bool
   const matchedPatterns: string[] = [];
 
   for (const sub of subCommands) {
+    // Strip comment lines before matching — ensures patterns like ^ssh\b
+    // match commands prefixed with # comment lines.
+    const matchTarget = stripCommentLines(sub);
     let subMatched = false;
     for (const pattern of config.strictModeWhiteList) {
       try {
         const regex = new RegExp(pattern, "i");
-        if (regex.test(sub)) {
+        if (regex.test(matchTarget)) {
           subMatched = true;
           matchedPatterns.push(pattern);
           break;

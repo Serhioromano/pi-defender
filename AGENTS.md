@@ -85,10 +85,11 @@ pi.on("session_shutdown") → clears cached config, aborted flag, session-approv
 
 ### Pattern matching (config.ts:checkCommand)
 
-1. Tests `bashToolPatterns` regex against the bash command string
-2. Checks if command references `zeroAccessPaths` (any operation)
-3. Checks if command modifies `readOnlyPaths` (write/edit/delete patterns)
-4. Checks if command deletes `noDeletePaths` (delete patterns only)
+1. Strips `#`-prefixed comment lines from the command via `stripCommentLines()` before any pattern matching
+2. Tests `bashToolPatterns` regex against the stripped bash command string
+3. Checks if command references `zeroAccessPaths` (any operation)
+4. Checks if command modifies `readOnlyPaths` (write/edit/delete patterns)
+5. Checks if command deletes `noDeletePaths` (delete patterns only)
 
 Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
 
@@ -140,7 +141,8 @@ counts are highlighted in accent color. `index.ts` passes `savedTheme.fg.bind(sa
 
 ### Whitelist (config.ts)
 
-- **checkWhitelist(command, config)** → `{ matched, pattern }` — tests command against all `strictModeWhiteList` regex patterns
+- **checkWhitelist(command, config)** → `{ matched, pattern }` — tests command against all `strictModeWhiteList` regex patterns. Strips `#`-prefixed comment lines via `stripCommentLines()` before matching, so commands like `# comment\nssh root@...` match whitelist patterns written for just `ssh`.
+- **stripCommentLines(command)** → removes lines that start with `#` after optional whitespace (whole-line comments only — inline comments mid-line are preserved). Applied in `checkWhitelist()`, `checkSessionApproved()`, `checkCommand()`, and `splitChainCommands()`.
 - **generateWhitelistPattern(command)** — extracts tool identity (base command + subcommand for meta-tools like git, npm, npx, docker), strips all parameters/flags/paths/directories, tokenizes respecting quotes, reduces path-prefixed commands to basename, wraps in `^...\b`. For `npm run`/`bun run`/`yarn run`/`pnpm run`, generates a flag-tolerant 3-level pattern (e.g. `^npm run(\s+--?[a-zA-Z][\w-]*)*\s+build\b`). Returns empty string when no script name is found — never falls back to `^npm run\b` because that would approve ALL run commands.
 - **generateWhitelistPatterns(command)** — splits chained commands and applies `generateWhitelistPattern` to each
 - **addPatternToWhitelist(cwd, pattern)** — reads/creates `.pi/defender.yaml`, appends pattern to `strictModeWhiteList`, writes back. Returns `{ added, reason }`. Auto-creates `.pi/` dir and `defender.yaml` as needed. NEVER writes to `patterns.yaml` (which is overwritten on install).

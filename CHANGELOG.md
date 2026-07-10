@@ -2,6 +2,10 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [Unreleased]
+
+- `fix` - **Whitelist matching now ignores shell comment lines (#12)**: Commands prefixed with `#` comment lines (e.g. `# Test login\nssh root@...`) no longer break whitelist pattern matching. A new `stripCommentLines()` helper removes lines that start with `#` (after optional whitespace) before matching against whitelist patterns, session-approved patterns, and bashToolPatterns. Also applied in `splitChainCommands()` so chained sub-commands are comment-free. Inline comments (where `#` appears mid-line) are preserved since they don't affect `^...\b`-based pattern matching.
+
 ## [v1.7.4]
 
 - `add` - **"Save my choice" in session-start selector**: The session-start selector now includes two save options: 💾 Save choice for this project (writes `defaultMode` to `.pi/defender.yaml`) and 🌐 Save choice forever (global) (writes to `~/.pi/defender.yaml`). This converts the selector into a self-discovering onboarding flow — users can persist their preference without ever reading the README. The save options remember the last-highlighted mode, so you can navigate to a mode, then down to save. Save options are rendered dimmed when a mode option is highlighted, and highlighted when selected. Number key shortcuts `4` and `5` work for the save options.
