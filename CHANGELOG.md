@@ -2,8 +2,9 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [Unreleased]
+## [v1.8.0]
 
+- `add` - default mode. Allows user to save Defender Mode globaly or localy and avoid popup every time pi starts.
 - `fix` - **Whitelist matching now ignores shell comment lines (#12)**: Commands prefixed with `#` comment lines (e.g. `# Test login\nssh root@...`) no longer break whitelist pattern matching. A new `stripCommentLines()` helper removes lines that start with `#` (after optional whitespace) before matching against whitelist patterns, session-approved patterns, and bashToolPatterns. Also applied in `splitChainCommands()` so chained sub-commands are comment-free. Inline comments (where `#` appears mid-line) are preserved since they don't affect `^...\b`-based pattern matching.
 
 ## [v1.7.4]
