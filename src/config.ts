@@ -18,6 +18,7 @@ export interface Config {
   readOnlyPaths: string[];
   noDeletePaths: string[];
   strictModeWhiteList: string[];
+  defaultMode?: "strict" | "patterns" | "off" | "interactive";
 }
 
 /** Per-file source tracking — what each patterns.yaml contributed. */
@@ -129,7 +130,7 @@ function displayPathFor(configPath: string, cwd: string): string {
 
 /** Empty config sentinel. */
 function emptyConfig(): Config {
-  return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [], strictModeWhiteList: [] };
+  return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [], strictModeWhiteList: [], defaultMode: undefined };
 }
 
 function parseConfigFile(path: string): Config | null {
@@ -142,6 +143,7 @@ function parseConfigFile(path: string): Config | null {
       readOnlyPaths: (raw.readOnlyPaths as string[]) || [],
       noDeletePaths: (raw.noDeletePaths as string[]) || [],
       strictModeWhiteList: (raw.strictModeWhiteList as string[]) || [],
+      defaultMode: (raw.defaultMode as Config["defaultMode"]) || undefined,
     };
   } catch {
     return null;
@@ -155,6 +157,10 @@ function mergeConfigs(...configs: Config[]): Config {
     readOnlyPaths: configs.flatMap(c => c.readOnlyPaths),
     noDeletePaths: configs.flatMap(c => c.noDeletePaths),
     strictModeWhiteList: configs.flatMap(c => c.strictModeWhiteList),
+    // defaultMode uses FIRST-wins (not last-wins) so project-local .pi/defender.yaml
+    // always overrides global ~/.pi/defender.yaml. getConfigPaths loads local before
+    // global, so the first non-undefined value is the most specific (local) one.
+    defaultMode: (() => { const raw = configs.map(c => c.defaultMode).filter(Boolean); return raw.length > 0 ? raw[0] : undefined; })(),
   };
 }
 
@@ -1053,6 +1059,67 @@ export function formatStatsTable(
   }
   lines.push(`  └${BORDER}┘`);
   return lines.join("\n");
+}
+
+// =============================================================================
+// PATH CHECKING for Edit/Write/Read tools
+// =============================================================================
+
+// =============================================================================
+// DEFAULT MODE — persist user's session-start choice
+// =============================================================================
+
+/**
+ * Write `defaultMode` to the defender.yaml file (local or global).
+ * Creates the file and directory if they don't exist.
+ * Uses last-wins semantics — if the file already has other keys they are preserved.
+ *
+ * @param cwd Current working directory (for resolving local path)
+ * @param mode The defaultMode value to write
+ * @param global_ If true, writes to ~/.pi/defender.yaml; otherwise .pi/defender.yaml
+ */
+export function setDefaultMode(
+  cwd: string,
+  mode: Config["defaultMode"],
+  global_: boolean,
+): { success: boolean; path: string; reason?: string } {
+  const dir = global_ ? join(homedir(), ".pi") : join(cwd, ".pi");
+  const filePath = join(dir, "defender.yaml");
+
+  // Create directory if needed
+  if (!existsSync(dir)) {
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch (e) {
+      return { success: false, path: filePath, reason: `Failed to create directory: ${dir}: ${String(e)}` };
+    }
+  }
+
+  // Read or initialise the file
+  let raw: Record<string, unknown>;
+  if (existsSync(filePath)) {
+    try {
+      const content = readFileSync(filePath, "utf-8");
+      const parsed = parseYaml(content);
+      // parseYaml returns null for empty files or non-map values (scalars, arrays)
+      raw = (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed : {};
+    } catch {
+      raw = {};
+    }
+  } else {
+    raw = {};
+  }
+
+  // Write the value
+  raw.defaultMode = mode;
+
+  try {
+    const yamlStr = stringifyYaml(raw, { lineWidth: 120 });
+    writeFileSync(filePath, yamlStr, "utf-8");
+    return { success: true, path: filePath };
+  } catch (e) {
+    return { success: false, path: filePath, reason: `Failed to write file: ${String(e)}` };
+  }
 }
 
 // =============================================================================

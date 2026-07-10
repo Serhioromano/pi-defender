@@ -2,6 +2,24 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [v1.7.4]
+
+- `add` - **"Save my choice" in session-start selector**: The session-start selector now includes two save options: 💾 Save choice for this project (writes `defaultMode` to `.pi/defender.yaml`) and 🌐 Save choice forever (global) (writes to `~/.pi/defender.yaml`). This converts the selector into a self-discovering onboarding flow — users can persist their preference without ever reading the README. The save options remember the last-highlighted mode, so you can navigate to a mode, then down to save. Save options are rendered dimmed when a mode option is highlighted, and highlighted when selected. Number key shortcuts `4` and `5` work for the save options.
+- `add` - **`/defender:default-mode` command**: New slash command to set or reset the default mode from the Pi session. Usage:
+  - `/defender:default-mode` — shows current default mode + usage help
+  - `/defender:default-mode strict` — 🔒 Strict ON (global)
+  - `/defender:default-mode patterns` — 🛡️ Patterns only (global)
+  - `/defender:default-mode off` — ⚪ Disable defender (global)
+  - `/defender:default-mode interactive` — reset (show selector again)
+  - `/defender:default-mode strict --local` — project-local (`.pi/defender.yaml`)
+- `add` - **`/defender:status` shows defaultMode**: Status output now includes a line showing the current `defaultMode` setting (or "not set" if the selector is shown each session).
+- `add` - **`setDefaultMode()` helper (config.ts)**: New exported function that writes `defaultMode` to either `.pi/defender.yaml` or `~/.pi/defender.yaml`. Creates the file and directory if needed, preserving existing keys. Used by the selector save options and the `/defender:default-mode` command.
+- `add` - **`defaultMode` config option**: Add `defaultMode` to any `defender.yaml` or `patterns.yaml` to skip the session-start interactive selector and go directly to your preferred mode. Values: `strict` (🔒 Strict Mode ON), `patterns` (🛡️ Patterns only), `off` (⚪ Disable Defender), `interactive` (show the selector — same as omitting the key). Merged across all config files with **first-wins semantics** (project-local `.pi/defender.yaml` overrides global `~/.pi/defender.yaml`). When a non-interactive mode is set, the config table notification is shown instead of the selector.
+- `fix` - **Project-local defaultMode now wins over global**: `defaultMode` uses first-wins semantics (local `.pi/defender.yaml` is checked before global `~/.pi/defender.yaml`), so a project-specific setting always overrides the global default. Previously the global config would always override due to last-wins merging.
+- `fix` - **defaultMode fast path no longer crashes on theme deref**: The new module-level `fg()` helper is used everywhere instead of direct `savedTheme.fg(...)`. When the session-start fast path (defaultMode set) skips the interactive selector, `savedTheme` remains null — but subsequent `/defender:strict off` or whitelist notifications now use the safe accessor and degrade to plain text instead of crashing.
+- `fix` - **setDefaultMode() crash on empty or scalar defender.yaml**: `parseYaml("")` returns `null`, and `parseYaml("42")` returns a number — both would crash when writing `.defaultMode`. The helper now normalises to a plain `{}` when the parsed value is null, a scalar, or an array.
+- `fix` - **feedback.md no longer ships in npm package**: Added to `.npmignore`.
+
 ## [v1.7.3]
 
 - `fix` - **Harden `pi_defender_create_issue` tool against misuse**: The tool is EXCLUSIVE to `/defender:report-issue` and creates issues only on `Serhioromano/pi-defender`. Updated tool `description`, `promptGuidelines`, `promptSnippet`, and `AGENTS.md` to explicitly forbid using this tool for any other repository or purpose. AI agents must use `gh issue create` CLI for issues on other repos.
