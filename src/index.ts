@@ -194,57 +194,31 @@ export default function (pi: ExtensionAPI) {
   // SESSION START
   // ===========================================================================
 
-  pi.on("session_start", async (_event, ctx) => {
-    const loaded = getLoadedConfig(ctx.cwd);
-
-    // ---- VERSION CHECK — show changelog on upgrade ----
-    const lastSeenVersion = readLastSeenVersion();
-    if (DEFENDER_VERSION !== lastSeenVersion) {
-      const changelogDiff = getChangelogDiff(DEFENDER_VERSION, lastSeenVersion);
-      if (changelogDiff) {
-        const header = lastSeenVersion
-          ? `## 🛡️ Pi Defender updated from v${lastSeenVersion} → v${DEFENDER_VERSION}`
-          : `## 🛡️ Pi Defender v${DEFENDER_VERSION} — What's New`;
-        // Show changelog as a user message so markdown gets rendered by the chat UI.
-        // sendUserMessage triggers a turn, but this fires once per version — worth it
-        // for proper formatting.
-        const fullChangelog = header + "\n\n" + changelogDiff;
-        pi.sendUserMessage(fullChangelog);
-      }
-      // Persist the new version as seen — writes to ~/.pi/defender-version
-      writeLastSeenVersion(DEFENDER_VERSION);
-    }
-
-    // defaultMode from defender.yaml — skip the interactive selector entirely
-    if (loaded.config.defaultMode && loaded.config.defaultMode !== "interactive") {
-      const mode = loaded.config.defaultMode;
-      if (mode === "off") {
-        strictMode = false;
-        defenderDisabled = true;
-      } else if (mode === "patterns") {
-        strictMode = false;
-        defenderDisabled = false;
-      } else {
-        strictMode = true;
-        defenderDisabled = false;
-      }
-      ctx.ui.notify(
-        formatConfigTable(loaded, DEFENDER_VERSION, mode === "strict", mode === "off", undefined, undefined),
-        "info",
-      );
-      return;
-    }
-
-
-    if (!ctx.hasUI || typeof ctx.ui?.custom !== "function") {
-      // No UI — default to strict mode ON with table notification
+  /**
+   * Apply a protection mode to the current session state (no config persistence).
+   */
+  function applyMode(mode: Config["defaultMode"]): void {
+    if (mode === "off") {
+      strictMode = false;
+      defenderDisabled = true;
+    } else if (mode === "patterns") {
+      strictMode = false;
+      defenderDisabled = false;
+    } else {
       strictMode = true;
-      ctx.ui.notify(
-        formatConfigTable(loaded, DEFENDER_VERSION, true, false, getFg(), getDimAnsi()),
-        "info",
-      );
-      return;
+      defenderDisabled = false;
     }
+  }
+
+  /**
+   * Shared protection-level selector — used by session_start and /defender:default-mode.
+   * Returns the parsed choice with mode + save flags, or null if unavailable/cancelled.
+   */
+  async function showModeSelector(
+    ctx: any,
+    description: string,
+  ): Promise<{ mode: Config["defaultMode"]; saveLocal: boolean; saveGlobal: boolean; } | null> {
+    if (!ctx.hasUI || typeof ctx.ui?.custom !== "function") return null;
 
     try {
       const result = await ctx.ui.custom(
@@ -268,7 +242,7 @@ export default function (pi: ExtensionAPI) {
             lines.push(theme.fg("accent", sep));
             lines.push(theme.fg("accent", theme.bold(` 🛡️ Pi Defender v${DEFENDER_VERSION}`)));
             lines.push("");
-            lines.push(theme.fg("warning", " Choose protection level for this session:"));
+            lines.push(theme.fg("warning", description));
             lines.push("");
             for (let i = 0; i < modeOptions.length; i++) {
               const isSelected = i === selectedIndex;
@@ -314,14 +288,12 @@ export default function (pi: ExtensionAPI) {
             handleInput: (data: string) => {
               const digit = decodeKittyPrintable(data) || data;
 
-              // 1-3: select mode (with any checked saves)
               if (/^[1-3]$/.test(digit)) {
                 const modeIdx = parseInt(digit, 10) - 1;
                 done(buildChoice(modeOptions[modeIdx].value));
                 return;
               }
 
-              // 4-5: toggle checkbox
               if (/^[4-5]$/.test(digit)) {
                 const saveIdx = parseInt(digit, 10) - 1 - modeOptions.length;
                 if (saveIdx >= 0 && saveIdx < saveOptions.length) {
@@ -357,7 +329,6 @@ export default function (pi: ExtensionAPI) {
             },
           };
 
-          // Build the choice string from the selected mode + any checked saves
           function buildChoice(mode: string): string {
             const parts: string[] = [mode];
             if (saveOptions[0].checked) parts.push("save-local");
@@ -368,66 +339,100 @@ export default function (pi: ExtensionAPI) {
       );
 
       const choice = (result ?? "strict") as string;
-
-      // Parse choice: "strict", "patterns:save-local", "off:save-global", "strict:save-local:save-global"
       const choiceParts = choice.split(":");
-      const modeSelected = choiceParts[0] as Config["defaultMode"];
-      const saveLocal = choiceParts.includes("save-local");
-      const saveGlobal = choiceParts.includes("save-global");
+      return {
+        mode: choiceParts[0] as Config["defaultMode"],
+        saveLocal: choiceParts.includes("save-local"),
+        saveGlobal: choiceParts.includes("save-global"),
+      };
+    } catch {
+      return null;
+    }
+  }
 
-      // Apply mode for this session
-      if (modeSelected === "off") {
-        strictMode = false;
-        defenderDisabled = true;
-      } else if (modeSelected === "patterns") {
-        strictMode = false;
-        defenderDisabled = false;
-      } else {
-        strictMode = true;
-        defenderDisabled = false;
+  pi.on("session_start", async (_event, ctx) => {
+    const loaded = getLoadedConfig(ctx.cwd);
+
+    // ---- VERSION CHECK — show changelog on upgrade ----
+    const lastSeenVersion = readLastSeenVersion();
+    if (DEFENDER_VERSION !== lastSeenVersion) {
+      const changelogDiff = getChangelogDiff(DEFENDER_VERSION, lastSeenVersion);
+      if (changelogDiff) {
+        const header = lastSeenVersion
+          ? `## 🛡️ Pi Defender updated from v${lastSeenVersion} → v${DEFENDER_VERSION}`
+          : `## 🛡️ Pi Defender v${DEFENDER_VERSION} — What's New`;
+        // Show changelog as a user message so markdown gets rendered by the chat UI.
+        // sendUserMessage triggers a turn, but this fires once per version — worth it
+        // for proper formatting.
+        const fullChangelog = header + "\n\n" + changelogDiff;
+        pi.sendUserMessage(fullChangelog);
       }
+      // Persist the new version as seen — writes to ~/.pi/defender-version
+      writeLastSeenVersion(DEFENDER_VERSION);
+    }
 
-      // Persist if save checkbox was ticked
-      if (saveLocal || saveGlobal) {
-        const saveResults: string[] = [];
-        if (saveLocal) {
-          const r = setDefaultMode(ctx.cwd, modeSelected, false);
-          saveResults.push(r.success ? "local" : r.reason ?? "local-failed");
-        }
-        if (saveGlobal) {
-          const r = setDefaultMode(ctx.cwd, modeSelected, true);
-          saveResults.push(r.success ? "global" : r.reason ?? "global-failed");
-        }
-
-        const displayMode = modeSelected === "strict" ? "🔒 Strict Mode" : modeSelected === "patterns" ? "🛡️ Patterns only" : "⚪ Disabled";
-        const successes = saveResults.filter(r => r === "local" || r === "global");
-        const failures = saveResults.filter(r => r !== "local" && r !== "global");
-
-        if (successes.length > 0) {
-          const scopeLabel = successes.length === 2
-            ? "both locally and globally"
-            : successes[0] === "local" ? "for this project (.pi/defender.yaml)" : "globally (~/.pi/defender.yaml)";
-          ctx.ui.notify(`💾 Saved default mode: ${displayMode} ${scopeLabel}. The selector will be skipped next session.`, "info");
-        }
-        if (failures.length > 0) {
-          ctx.ui.notify(`💾 Save error(s): ${failures.join(", ")}`, "error");
-        }
-        // Reload config to pick up any saved defaultMode
-        currentLoadedConfig = null;
-      }
-
+    // defaultMode from defender.yaml — skip the interactive selector entirely
+    if (loaded.config.defaultMode && loaded.config.defaultMode !== "interactive") {
+      applyMode(loaded.config.defaultMode);
+      const mode = loaded.config.defaultMode;
       ctx.ui.notify(
-        formatConfigTable(getLoadedConfig(ctx.cwd), DEFENDER_VERSION, strictMode, defenderDisabled, getFg(), getDimAnsi()),
+        formatConfigTable(loaded, DEFENDER_VERSION, mode === "strict", mode === "off", undefined, undefined),
         "info",
       );
-    } catch {
-      // Fallback if custom UI fails
+      return;
+    }
+
+    // Show protection-level selector (reusable between session_start and /defender:default-mode)
+    const selected = await showModeSelector(ctx, " Choose protection level for this session:");
+
+    if (!selected) {
+      // Fallback if custom UI fails or unavailable
       strictMode = true;
       ctx.ui.notify(
         formatConfigTable(loaded, DEFENDER_VERSION, true, false, getFg(), getDimAnsi()),
         "info",
       );
+      return;
     }
+
+    const { mode: modeSelected, saveLocal, saveGlobal } = selected;
+
+    // Apply mode for this session
+    applyMode(modeSelected);
+
+    // Persist if save checkbox was ticked
+    if (saveLocal || saveGlobal) {
+      const saveResults: string[] = [];
+      if (saveLocal) {
+        const r = setDefaultMode(ctx.cwd, modeSelected, false);
+        saveResults.push(r.success ? "local" : r.reason ?? "local-failed");
+      }
+      if (saveGlobal) {
+        const r = setDefaultMode(ctx.cwd, modeSelected, true);
+        saveResults.push(r.success ? "global" : r.reason ?? "global-failed");
+      }
+
+      const displayMode = modeSelected === "strict" ? "🔒 Strict Mode" : modeSelected === "patterns" ? "🛡️ Patterns only" : "⚪ Disabled";
+      const successes = saveResults.filter(r => r === "local" || r === "global");
+      const failures = saveResults.filter(r => r !== "local" && r !== "global");
+
+      if (successes.length > 0) {
+        const scopeLabel = successes.length === 2
+          ? "both locally and globally"
+          : successes[0] === "local" ? "for this project (.pi/defender.yaml)" : "globally (~/.pi/defender.yaml)";
+        ctx.ui.notify(`💾 Saved default mode: ${displayMode} ${scopeLabel}. The selector will be skipped next session.`, "info");
+      }
+      if (failures.length > 0) {
+        ctx.ui.notify(`💾 Save error(s): ${failures.join(", ")}`, "error");
+      }
+      // Reload config to pick up any saved defaultMode
+      currentLoadedConfig = null;
+    }
+
+    ctx.ui.notify(
+      formatConfigTable(getLoadedConfig(ctx.cwd), DEFENDER_VERSION, strictMode, defenderDisabled, getFg(), getDimAnsi()),
+      "info",
+    );
   });
 
   // ===========================================================================
@@ -1075,7 +1080,8 @@ export default function (pi: ExtensionAPI) {
         `2. Create a concise, descriptive issue title (max 80 chars)\n` +
         `3. Enhance the description: add clarity, context, steps to reproduce (for bugs) or use case (for features). Keep it in the user's voice — don't add meta-commentary about what you did.\n` +
         `4. Combine your enhanced description with the diagnostics section below into one markdown body.\n` +
-        `5. Call the **pi_defender_create_issue** tool with title, body, and label ("bug" or "enhancement").\n\n` +
+        `5. Call the **pi_defender_create_issue** tool with title, body, and label ("bug" or "enhancement").\n` +
+        `6. STOP. Do NOT fix the issue. Do NOT edit any source files. Do NOT update CHANGELOG.md, README.md, or AGENTS.md. The user will handle the fix separately. Your ONLY job is to create the issue.\n\n` +
         `Diagnostics to append to the issue body:\n\n${diagnosticsMd}`,
         { deliverAs: "followUp" },
       );
@@ -1157,25 +1163,66 @@ export default function (pi: ExtensionAPI) {
       const loaded = getLoadedConfig(ctx.cwd);
       const trimmedArgs = args.trim();
 
-      // No arguments — show current defaultMode + usage
+      // No arguments — launch the protection-level selector (same as session startup)
       if (!trimmedArgs) {
-        const current = loaded.config.defaultMode;
-        let status = "";
-        if (current && current !== "interactive") {
-          const icon = current === "strict" ? "🔒" : current === "patterns" ? "🛡️" : "⚪";
-          status = `\n  Current default mode: ${icon} ${current}`;
-        } else {
-          status = "\n  Current default mode: not set (selector shown each session)";
+        if (!ctx.hasUI || typeof ctx.ui?.custom !== "function") {
+          ctx.ui.notify(
+            "🛡️ No interactive UI available.\n\n" +
+            "Use /defender:default-mode strict|patterns|off|interactive [--local] to set mode directly.\n\n" +
+            "Current: " + (loaded.config.defaultMode && loaded.config.defaultMode !== "interactive"
+              ? loaded.config.defaultMode
+              : "not set (selector shown each session)"),
+            "warning",
+          );
+          return;
         }
+
+        const selected = await showModeSelector(ctx, " Set default protection mode:");
+
+        if (!selected) {
+          ctx.ui.notify("🛡️ Selector cancelled or unavailable.", "info");
+          return;
+        }
+
+        const { mode: modeSelected, saveLocal, saveGlobal } = selected;
+
+        // Always save the chosen mode (this IS the default-mode command).
+        // If no save checkbox was ticked, default to saving globally.
+        const doSaveLocal = saveLocal;
+        const doSaveGlobal = saveGlobal || !saveLocal;
+
+        const saveResults: string[] = [];
+        if (doSaveLocal) {
+          const r = setDefaultMode(ctx.cwd, modeSelected, false);
+          saveResults.push(r.success ? "local" : r.reason ?? "local-failed");
+        }
+        if (doSaveGlobal) {
+          const r = setDefaultMode(ctx.cwd, modeSelected, true);
+          saveResults.push(r.success ? "global" : r.reason ?? "global-failed");
+        }
+
+        // Apply mode for this session immediately
+        applyMode(modeSelected);
+
+        // Reload config to pick up the change
+        currentLoadedConfig = null;
+
+        const displayMode = modeSelected === "strict" ? "🔒 Strict Mode" : modeSelected === "patterns" ? "🛡️ Patterns only" : "⚪ Disabled";
+        const successes = saveResults.filter(r => r === "local" || r === "global");
+        const failures = saveResults.filter(r => r !== "local" && r !== "global");
+
+        if (successes.length > 0) {
+          const scopeLabel = successes.length === 2
+            ? "both locally and globally"
+            : successes[0] === "local" ? "for this project (.pi/defender.yaml)" : "globally (~/.pi/defender.yaml)";
+          ctx.ui.notify(`💾 Default mode set to ${displayMode} ${scopeLabel}. The selector will be skipped next session.`, "info");
+        }
+        if (failures.length > 0) {
+          ctx.ui.notify(`💾 Save error(s): ${failures.join(", ")}`, "error");
+        }
+
         ctx.ui.notify(
-          `🛡️ Default mode${status}\n\n` +
-          "Usage:\n" +
-          "  /defender:default-mode strict     → 🔒 Strict ON (global)\n" +
-          "  /defender:default-mode patterns   → 🛡️ Patterns only (global)\n" +
-          "  /defender:default-mode off        → ⚪ Disable defender (global)\n" +
-          "  /defender:default-mode interactive → reset (show selector again)\n" +
-          "  /defender:default-mode strict --local → project-local (.pi/defender.yaml)\n" +
-          "\nUse /defender:status to see full config breakdown.",
+          formatConfigTable(getLoadedConfig(ctx.cwd), DEFENDER_VERSION, strictMode, defenderDisabled, getFg(), getDimAnsi()),
           "info",
         );
         return;

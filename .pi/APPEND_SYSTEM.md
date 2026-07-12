@@ -1,3 +1,4 @@
+- **NEVER edit code or files unless explicitly asked to do so.** If asked to investigate, only investigate. If asked to create an issue, only create the issue. Do not fix, revert, or modify anything unless the instruction explicitly says "fix", "implement", "edit", "revert", etc.
 - after apdate to any `*.ts` file, update `README.md` and `CHANGELOG.md` and `AGENTS.md`
 - In `CHANGELOG.md` save new data under (## [Unreleased]) title. If it is not there create it.
 - Look pi documentaion for best practice

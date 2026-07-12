@@ -23,9 +23,10 @@ The next time you start Pi agent, a **protection-level selector** appears — ch
 
 **From the selector:** The session-start selector includes 💾 *Save choice for this project* and 🌐 *Save choice forever (global)* options. Navigate to your preferred mode, then down to a save option to persist it — no manual YAML editing required.
 
-**From the command line:** Use `/defender:default-mode` to set the mode without the selector:
+**From the command line:** Use `/defender:default-mode` (no args) to open the same interactive protection-level selector from session startup, or pass a mode directly:
 
 ```
+/defender:default-mode               # opens the selector (🔒/🛡️/⚪ + save options)
 /defender:default-mode strict        # 🔒 Strict ON (global)
 /defender:default-mode patterns      # 🛡️ Patterns only (global)
 /defender:default-mode off           # ⚪ Disable defender (global)
@@ -70,7 +71,7 @@ Place it in `.pi/defender.yaml` (project-local, persistent) or `~/.pi/defender.y
 | `/defender:strict [on\|off]` | Toggle strict mode (ON by default) |
 | `/defender:globalize-whitelist` | Copy unique local whitelist patterns to `~/.pi/defender.yaml` |
 | `/defender:report-issue <desc>` | AI-enhanced bug/feature report → GitHub issue |
-| `/defender:default-mode` | Set or reset the default protection mode (skip session-start selector) |
+| `/defender:default-mode` | Set/reset default mode. No args = opens selector. With args: `strict`/`patterns`/`off`/`interactive` (+ `--local`) |
 
 ## Configuration
 

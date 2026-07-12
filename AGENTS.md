@@ -10,7 +10,9 @@ Pi Defender is a Pi coding agent extension that provides defense-in-depth protec
 
 ```
 src/
-├── index.ts      # Extension entry: event handlers, commands, strict mode logic
+├── index.ts      # Extension entry: event handlers, commands, strict mode logic,
+│                 #   showModeSelector (reusable protection-level selector),
+│                 #   applyMode helper
 ├── config.ts     # Pattern matching, path checking, YAML config loading + merging,
 │                 #   changelog parsing (reads bundled CHANGELOG.md), version tracking
 └── patterns.yaml # Bundled default patterns (shipped with the package)
@@ -64,16 +66,11 @@ pi.on("session_start") → runs `ensurePatternsConfig` (idempotent deploy)
     → checks `defaultMode` from merged config:
       - If set (and not "interactive"), skips the selector entirely
         and applies the mode directly (strict/patterns/off)
-      - Shows config table notification instead
-    → If no defaultMode or "interactive", shows protection-level selector:
-    🔒 Strict Mode ON (default) | 🛡️ Patterns only | ⚪ Disable Defender
-    ───────────────────────────────
-    💾 Save choice for this project → writes defaultMode to .pi/defender.yaml
-    🌐 Save choice forever (global) → writes defaultMode to ~/.pi/defender.yaml
-    The save options remember the last-highlighted mode via `lastModeIndex` closure
-    variable. Number keys `4` and `5` activate the save options with the current
-    mode. When a mode option is highlighted, save options render dimmed.
-    After selection (or save), displays a config table breaking down which rules
+      - Shows config table notification for strict/patterns modes;
+        shows brief "DISABLED" notification for off mode
+    → If no defaultMode or "interactive", calls showModeSelector() — a reusable
+      async function that renders the protection-level selector. Also used by
+      /defender:default-mode (no args). After selection, displays a config table breaking down which rules
     come from which source (.pi/patterns.yaml, ~/.pi/patterns.yaml,
     .pi/defender.yaml, ~/.pi/defender.yaml). Uses Unicode box-drawing
     characters: ┌─...─┐ ├─...─┤ └─...─┘ with columns: Pat, Zero, ROnly, NDel, Wlst.
@@ -118,7 +115,9 @@ to persist across updates.
 **setDefaultMode(cwd, mode, global_)** — Helper in config.ts that writes
 `defaultMode` to either `.pi/defender.yaml` (local) or `~/.pi/defender.yaml`
 (global). Creates the file and directory if needed, preserving existing keys.
-Returns `{ success, path, reason? }`. Used by the session-start selector save
+Writes `defaultMode` as the **first key** in the file, followed by a blank line
+before any remaining content (whitelist patterns, etc.). Returns
+`{ success, path, reason? }`. Used by the session-start selector save
 options and the `/defender:default-mode` command.
 
 ### Version tracking (config.ts)
@@ -322,7 +321,7 @@ A **150ms delay** runs between sub-command selectors to prevent TUI race conditi
 | `/defender:reload` | Clears cached config, reloads from YAML, shows table |
 | `/defender:patterns` | Copies bundled essential patterns to `.pi/patterns.yaml` (idempotent) |
 | `/defender:strict [on\|off]` | Toggles strict mode (ON by default, resets session-approved/aborted) |
-| `/defender:default-mode` | Set/reset default mode (skip session-start selector). No args = show help. Args: `strict`/`patterns`/`off`/`interactive` (+ optional `--local` for project-scoped) |
+| `/defender:default-mode` | Set/reset default mode (skip session-start selector). No args = launch protection-level selector (same as session startup). Args: `strict`/`patterns`/`off`/`interactive` (+ optional `--local` for project-scoped) |
 | `/defender:globalize-whitelist` | Copies unique local whitelist patterns from `.pi/defender.yaml` to `~/.pi/defender.yaml` |
 | `/defender:report-issue <description>` | AI-powered: analyzes raw message (bug/feature), enhances description, creates GitHub issue via custom tool (REST API, no gh CLI needed) |
 

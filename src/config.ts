@@ -999,6 +999,14 @@ export function formatConfigTable(
   const statusIcon = disabled ? "⚪" : strictMode ? "🔒" : "🛡️";
   const statusText = disabled ? "DISABLED" : strictMode ? "Strict Mode ON" : "Patterns only";
   lines.push(`🛡️  Pi Defender v${version}  —  ${statusIcon} ${statusText}`);
+  
+  lines.push("");
+  lines.push("To change default mode run /defender:default-mode command!");
+
+  if (disabled) {
+    return lines.join("\n");
+  }
+
   lines.push("");
   lines.push("  Rules loaded:");
 
@@ -1160,7 +1168,15 @@ export function setDefaultMode(
   raw.defaultMode = mode;
 
   try {
-    const yamlStr = stringifyYaml(raw, { lineWidth: 120 });
+    // Build YAML output with defaultMode as the first key, followed by a blank line.
+    // This makes it easy to spot the primary config setting at a glance.
+    const { defaultMode: _, ...rest } = raw;
+    const lines: string[] = [`defaultMode: ${mode}`];
+    if (Object.keys(rest).length > 0) {
+      lines.push(""); // blank line before the rest
+      lines.push(stringifyYaml(rest, { lineWidth: 120 }));
+    }
+    const yamlStr = lines.join("\n") + "\n";
     writeFileSync(filePath, yamlStr, "utf-8");
     return { success: true, path: filePath };
   } catch (e) {

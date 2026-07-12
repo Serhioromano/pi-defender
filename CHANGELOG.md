@@ -4,6 +4,11 @@ All notable changes to Pi Defender will be documented in this file.
 
 ## [Unreleased]
 
+- `enhancement` - **defaultMode written as first key in defender.yaml (#14)**: When `defaultMode` is saved to `defender.yaml` (via session-start save checkboxes or `/defender:default-mode`), it is now always written as the first key in the file, followed by a blank line before any remaining content.
+- `fix` - **Typo "defualt" → "default" in config table hint**: Fixed a minor spelling error in the "To change default mode" hint line shown in the config table notification.
+- `fix` - **No config table when disabled via defaultMode (#16)**: When `defaultMode: off` is set in the config, the session-start handler now skips the config table notification instead of showing a full table of rules that aren't being enforced. The table is still shown for `strict` and `patterns` modes.
+- `fix` - **report-issue: added explicit STOP instruction (#16)**: The `/defender:report-issue` follow-up prompt now includes step 6 — an explicit off-ramp that tells the agent to stop after creating the issue and not fix, edit, or update any files.
+- `enhancement` - **`/defender:default-mode` (no args) now launches the protection-level selector (#15)**: Running `/defender:default-mode` without arguments now opens the same interactive protection-level selector dialog that appears on session startup (🔒 Strict Mode ON | 🛡️ Patterns only | ⚪ Disable Defender). The selector includes the 💾/🌐 save checkboxes. When no save checkbox is ticked, the chosen mode is saved globally by default. The mode is also applied immediately for the current session. The selector UI is extracted into a reusable `showModeSelector()` function shared between `session_start` and the command handler. A new `applyMode()` helper reduces duplicated mode-application logic.
 - `add` - **New version changelog on upgrade (#8)**: When Pi Defender is updated, the extension detects the new version on session start and shows the changelog as a formatted chat message. Version state is stored in `~/.pi/defender-version` (plain text, separate from rule config). The bundled `CHANGELOG.md` is read from disk at runtime (removed from `.npmignore`, shipped with the package).
 
 ## [v1.8.0]
