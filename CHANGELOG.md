@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [Unreleased]
+## [v1.8.1]
 
 - `enhancement` - **defaultMode written as first key in defender.yaml (#14)**: When `defaultMode` is saved to `defender.yaml` (via session-start save checkboxes or `/defender:default-mode`), it is now always written as the first key in the file, followed by a blank line before any remaining content.
 - `fix` - **Typo "defualt" → "default" in config table hint**: Fixed a minor spelling error in the "To change default mode" hint line shown in the config table notification.
