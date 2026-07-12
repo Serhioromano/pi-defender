@@ -2,6 +2,10 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [Unreleased]
+
+- `add` - **New version changelog on upgrade (#8)**: When Pi Defender is updated, the extension detects the new version on session start and shows the changelog as a formatted chat message. Version state is stored in `~/.pi/defender-version` (plain text, separate from rule config). The bundled `CHANGELOG.md` is read from disk at runtime (removed from `.npmignore`, shipped with the package).
+
 ## [v1.8.0]
 
 - `add` - default mode. Allows user to save Defender Mode globaly or localy and avoid popup every time pi starts.

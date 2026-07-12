@@ -11,7 +11,8 @@ Pi Defender is a Pi coding agent extension that provides defense-in-depth protec
 ```
 src/
 ├── index.ts      # Extension entry: event handlers, commands, strict mode logic
-├── config.ts     # Pattern matching, path checking, YAML config loading + merging
+├── config.ts     # Pattern matching, path checking, YAML config loading + merging,
+│                 #   changelog parsing (reads bundled CHANGELOG.md), version tracking
 └── patterns.yaml # Bundled default patterns (shipped with the package)
 ```
 
@@ -52,6 +53,14 @@ pi.on("tool_call") 3 handlers registered:
                          Reads allowed during abort for diagnostics
 
 pi.on("session_start") → runs `ensurePatternsConfig` (idempotent deploy)
+    → **version check**: reads `~/.pi/defender-version` (plain text file with
+      last-seen version string) via `readLastSeenVersion()`. Compares against
+      DEFENDER_VERSION. On upgrade (or first run), reads bundled CHANGELOG.md
+      from disk (tries dev and installed paths), extracts entries between
+      lastSeen and current via `getChangelogDiff()`, sends the changelog as
+      a user message via `pi.sendUserMessage()` (rendered as markdown by the
+      chat UI), and writes the new version to `~/.pi/defender-version` via
+      `writeLastSeenVersion()`.
     → checks `defaultMode` from merged config:
       - If set (and not "interactive"), skips the selector entirely
         and applies the mode directly (strict/patterns/off)
@@ -111,6 +120,33 @@ to persist across updates.
 (global). Creates the file and directory if needed, preserving existing keys.
 Returns `{ success, path, reason? }`. Used by the session-start selector save
 options and the `/defender:default-mode` command.
+
+### Version tracking (config.ts)
+
+**Version state file** — `~/.pi/defender-version` is a plain text file containing
+just the version string (e.g. "1.8.0"). Clean, no YAML, separate from rule config.
+
+**CHANGELOG.md bundling** — The file is bundled with the npm package (removed
+from `.npmignore`). At runtime, `readChangelog()` tries two paths:
+- `join(__dirname, "..", "CHANGELOG.md")` — dev mode (`src/` → project root)
+- `join(__dirname, "..", "..", "CHANGELOG.md")` — installed (`dist/src/` → package root)
+No template literal embedding — the actual file is shipped and read at runtime.
+
+**semverCmp(a, b)** — Simple semver comparator (x.y.z), strips leading "v".
+
+**parseChangelogVersions(changelog)** → `Map<version, entry>` — Parses changelog:
+splits on `## [vX.Y.Z]` headers, extracts content between headers.
+
+**getChangelogDiff(currentVersion, lastSeenOrNewest)** → `string | null` —
+Extracts changelog entries for versions > lastSeenVersion and ≤ currentVersion.
+On first run (no lastSeenVersion), returns only the current version's entry.
+Returns null if CHANGELOG.md not found or no new versions exist.
+
+**readLastSeenVersion()** → `string | undefined` — Reads version from
+`~/.pi/defender-version`. Returns undefined if file doesn't exist.
+
+**writeLastSeenVersion(version)** — Writes version string to
+`~/.pi/defender-version`. Creates dir/file if needed. Errors silently ignored.
 
 ### Config loading (config.ts:loadConfig)
 

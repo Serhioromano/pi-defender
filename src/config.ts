@@ -1201,3 +1201,157 @@ export function checkFileAccess(
 
   return { blocked: false, reason: "" };
 }
+
+// =============================================================================
+// =============================================================================
+// VERSION / CHANGELOG — detect upgrades and show what's new
+// =============================================================================
+
+/**
+ * Find CHANGELOG.md in the package directory.
+ * Tries multiple paths to handle both development (src/) and installed (dist/src/) runtimes.
+ * Returns the file content or null if not found.
+ */
+function readChangelog(): string | null {
+  // Try multiple locations — covering dev mode, installed, and ESM without __dirname.
+  // @ts-ignore — __dirname is CJS global, may be injected by Pi runtime
+  const dir = typeof __dirname === "string" && __dirname ? __dirname : "";
+  const candidates = [
+    join(dir, "..", "CHANGELOG.md"),                          // dev (src/ → project root)
+    join(dir, "..", "..", "CHANGELOG.md"),                    // installed (dist/src/ → pkg root)
+    join(process.cwd(), "CHANGELOG.md"),                      // cwd fallback (dev from root)
+    join(process.cwd(), "node_modules", "pi-defender", "CHANGELOG.md"), // global install
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) {
+      try { return readFileSync(p, "utf-8"); } catch { /* continue */ }
+    }
+  }
+  return null;
+}
+
+/** Path to the version-state file — just the last-seen version string. */
+function versionStatePath(): string {
+  return join(homedir(), ".pi", "defender-version");
+}
+
+/**
+ * Read the last-seen version from ~/.pi/defender-version.
+ * Returns the version string or undefined if the file doesn't exist.
+ */
+export function readLastSeenVersion(): string | undefined {
+  try {
+    const p = versionStatePath();
+    if (!existsSync(p)) return undefined;
+    return readFileSync(p, "utf-8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Write the current version to ~/.pi/defender-version.
+ * A plain text file — no YAML, no clutter.
+ */
+export function writeLastSeenVersion(version: string): void {
+  try {
+    const p = versionStatePath();
+    const dir = dirname(p);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(p, version + "\n", "utf-8");
+  } catch { /* ignore — non-critical */ }
+}
+
+/**
+ * Compare two semver strings (x.y.z).
+ * Returns: negative if a < b, 0 if equal, positive if a > b.
+ */
+function semverCmp(a: string, b: string): number {
+  const aParts = a.replace(/^v/, "").split(".").map(Number);
+  const bParts = b.replace(/^v/, "").split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const aNum = aParts[i] || 0;
+    const bNum = bParts[i] || 0;
+    if (aNum !== bNum) return aNum - bNum;
+  }
+  return 0;
+}
+
+/**
+ * Parse CHANGELOG.md content into a Map of version string → entry text.
+ * Version entries are delimited by "## [vX.Y.Z]" headers.
+ */
+export function parseChangelogVersions(changelog: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const versionHeaderRegex = /^## \[v?([\d.]+)\]/;
+
+  // Find all version header positions
+  const positions: { version: string; start: number }[] = [];
+  const lines = changelog.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(versionHeaderRegex);
+    if (m) {
+      positions.push({ version: m[1], start: i });
+    }
+  }
+
+  // Extract content between headers
+  for (let i = 0; i < positions.length; i++) {
+    const { version, start } = positions[i];
+    const end = i + 1 < positions.length
+      ? positions[i + 1].start
+      : lines.length;
+    // Slice from start to end, trim trailing whitespace
+    const entry = lines.slice(start, end).join("\n").trim();
+    map.set(version, entry);
+  }
+
+  return map;
+}
+
+/**
+ * Get changelog diff between the last seen version and the current version.
+ *
+ * Reads CHANGELOG.md from disk (bundled with the package).
+ * Returns entries for versions strictly greater than lastSeenVersion and
+ * up to and including currentVersion. Sorted newest-first.
+ *
+ * If lastSeenVersion is undefined (first run), returns only the current
+ * version's entry.
+ *
+ * Returns null if CHANGELOG.md is not found or no new versions exist.
+ */
+export function getChangelogDiff(
+  currentVersion: string,
+  lastSeenVersion: string | undefined,
+): string | null {
+  const changelog = readChangelog();
+  if (!changelog) return null;
+
+  const versions = parseChangelogVersions(changelog);
+  if (versions.size === 0) return null;
+
+  // Collect relevant version entries
+  const relevant: string[] = [];
+  for (const [ver, entry] of versions) {
+    const cmpCurrent = semverCmp(ver, currentVersion);
+    if (cmpCurrent > 0) continue; // skip versions newer than current
+
+    if (lastSeenVersion) {
+      const cmpLast = semverCmp(ver, lastSeenVersion);
+      if (cmpLast <= 0) continue; // skip versions already seen or older
+    }
+
+    relevant.push(entry);
+  }
+
+  // If no lastSeenVersion, only show the current version's entry
+  if (!lastSeenVersion && relevant.length > 1) {
+    const currentEntry = versions.get(currentVersion);
+    return currentEntry || null;
+  }
+
+  if (relevant.length === 0) return null;
+
+  return relevant.reverse().join("\n\n");
+}

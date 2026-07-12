@@ -6,7 +6,7 @@
 # Pi session artifacts
 pi-session-*.html
 AGENTS.md
-CHANGELOG.md
+
 Makefile
 README.md
 LICENSE

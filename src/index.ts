@@ -27,16 +27,17 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Key, decodeKittyPrintable, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, stripCommentLines, splitChainCommands, formatConfigTable, formatStatsTable, mergeWhitelistToGlobal, setDefaultMode, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
+import { loadConfig, checkCommand, checkFileAccess, checkWhitelist, generateWhitelistPatterns, addPatternsToWhitelist, stripCommentLines, splitChainCommands, formatConfigTable, formatStatsTable, mergeWhitelistToGlobal, setDefaultMode, getChangelogDiff, readLastSeenVersion, writeLastSeenVersion, type Config, type LoadedConfig, type StatsSnapshot } from "./config";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 
-// @ts-ignore — __dirname is CJS global made available by the runtime
+// @ts-ignore — __dirname is a CJS global, Pi runtime may inject it even in ESM
 const DEFENDER_VERSION: string = (() => {
   try {
-    return JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8")).version;
+    const dir = typeof __dirname === "string" && __dirname ? __dirname : process.cwd();
+    return JSON.parse(readFileSync(join(dir, "..", "package.json"), "utf-8")).version;
   } catch {
     return "?";
   }
@@ -195,6 +196,24 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     const loaded = getLoadedConfig(ctx.cwd);
+
+    // ---- VERSION CHECK — show changelog on upgrade ----
+    const lastSeenVersion = readLastSeenVersion();
+    if (DEFENDER_VERSION !== lastSeenVersion) {
+      const changelogDiff = getChangelogDiff(DEFENDER_VERSION, lastSeenVersion);
+      if (changelogDiff) {
+        const header = lastSeenVersion
+          ? `## 🛡️ Pi Defender updated from v${lastSeenVersion} → v${DEFENDER_VERSION}`
+          : `## 🛡️ Pi Defender v${DEFENDER_VERSION} — What's New`;
+        // Show changelog as a user message so markdown gets rendered by the chat UI.
+        // sendUserMessage triggers a turn, but this fires once per version — worth it
+        // for proper formatting.
+        const fullChangelog = header + "\n\n" + changelogDiff;
+        pi.sendUserMessage(fullChangelog);
+      }
+      // Persist the new version as seen — writes to ~/.pi/defender-version
+      writeLastSeenVersion(DEFENDER_VERSION);
+    }
 
     // defaultMode from defender.yaml — skip the interactive selector entirely
     if (loaded.config.defaultMode && loaded.config.defaultMode !== "interactive") {

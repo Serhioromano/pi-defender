@@ -5,3 +5,4 @@ strictModeWhiteList:
   - ^grep\b
   - ^sed\b
   - ^node\b
+defaultMode: off
