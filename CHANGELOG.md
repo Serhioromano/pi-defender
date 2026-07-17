@@ -2,6 +2,10 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [v1.8.2]
+
+- `fix` - **Changelog message now self-identifies as authoritative (#17)**: Added a footer to the upgrade changelog message (`pi.sendUserMessage`) stating it's bundled with the extension and needs no independent verification. Prevents agents with RAG rules from trying to verify the changelog against commit/PR links that don't exist in the message.
+
 ## [v1.8.1]
 
 - `enhancement` - **defaultMode written as first key in defender.yaml (#14)**: When `defaultMode` is saved to `defender.yaml` (via session-start save checkboxes or `/defender:default-mode`), it is now always written as the first key in the file, followed by a blank line before any remaining content.
