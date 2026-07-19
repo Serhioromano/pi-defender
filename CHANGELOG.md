@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [Unreleased]
+## [v1.9.0]
 
 - `add` - **Auto-reject for bashToolPatterns + timeout gating for pattern-blocked prompts (#24)**: Every bundled `bashToolPatterns` entry now ships with `autoReject: true`. Combined with the default `promptTimeout: 120`, dangerous commands show a 2-minute countdown prompt with full control (⚠️ Allow anyway / ❌ Deny & Abort), then auto-deny if no response. When `promptTimeout` is 0/not set and `autoReject: true`, the command is blocked immediately with a notification — no prompt. The `promptTimeout` config (previously strict-mode only) now also gates `patternBlockedPrompt`. Timeout always auto-denies (agent can try a safer approach); only explicit user selection of "Deny & Abort" aborts the session. Users can override specific patterns with `autoReject: false` in `defender.yaml` to get the old wait-forever behavior.
   ```yaml
