@@ -10,6 +10,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 export interface BashPattern {
   pattern: string;
   reason: string;
+  /** When true and no promptTimeout: block immediately without prompt. */
+  autoReject?: boolean;
 }
 
 export interface Config {
@@ -288,6 +290,8 @@ function fnmatch(name: string, pattern: string): boolean {
 export interface CheckResult {
   blocked: boolean;
   reason: string;
+  /** When true: if no promptTimeout, skip prompt and block immediately. */
+  autoReject?: boolean;
 }
 
 export function checkPathPatterns(
@@ -350,11 +354,11 @@ export function checkCommand(command: string, config: Config): CheckResult {
   const matchTarget = stripCommentLines(command);
 
   // 1. Check against patterns from YAML (may block or ask)
-  for (const { pattern, reason } of config.bashToolPatterns) {
+  for (const { pattern, reason, autoReject } of config.bashToolPatterns) {
     try {
       const regex = new RegExp(pattern, "i");
       if (regex.test(matchTarget)) {
-        return { blocked: true,  reason: `Blocked: ${reason}` };
+        return { blocked: true, reason: `Blocked: ${reason}`, autoReject: autoReject === true };
       }
     } catch {
       continue;

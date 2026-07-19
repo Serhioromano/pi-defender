@@ -4,7 +4,16 @@ All notable changes to Pi Defender will be documented in this file.
 
 ## [Unreleased]
 
-- `add` - **Timeout for strict mode prompts (#25)**: Strict mode prompts now auto-dismiss after a configurable timeout. Two new config options: `promptTimeout` (seconds, default 120) and `autoApprove` (boolean, default false = auto-deny on timeout). These apply only to the strict mode selector — pattern-blocked prompts (`rm -rf`, `sudo`, secrets access) are never auto-dismissed and always require explicit user action. A live countdown indicator (`⏳ Will auto-deny in 45s...`) is shown in the TUI footer. Users can override in `defender.yaml`:
+- `add` - **Auto-reject for bashToolPatterns + timeout gating for pattern-blocked prompts (#24)**: Every bundled `bashToolPatterns` entry now ships with `autoReject: true`. Combined with the default `promptTimeout: 120`, dangerous commands show a 2-minute countdown prompt with full control (⚠️ Allow anyway / ❌ Deny & Abort), then auto-deny if no response. When `promptTimeout` is 0/not set and `autoReject: true`, the command is blocked immediately with a notification — no prompt. The `promptTimeout` config (previously strict-mode only) now also gates `patternBlockedPrompt`. Timeout always auto-denies (agent can try a safer approach); only explicit user selection of "Deny & Abort" aborts the session. Users can override specific patterns with `autoReject: false` in `defender.yaml` to get the old wait-forever behavior.
+  ```yaml
+  # In defender.yaml — override one pattern to wait forever:
+  bashToolPatterns:
+    - pattern: '\bgit\s+push\s+.*--force'
+      autoReject: false
+      reason: git push --force
+  ```
+
+- `add` - **Timeout for strict mode + pattern-blocked prompts (#25, #24)**: Both `strictModePrompt` and `patternBlockedPrompt` now auto-dismiss after a configurable timeout. Two new config options: `promptTimeout` (seconds, default 120) and `autoApprove` (boolean, default false = auto-deny on timeout). `autoApprove` applies only to non-whitelisted bash commands in strict mode — pattern-blocked prompts always auto-deny on timeout. All bundled `bashToolPatterns` ship with `autoReject: true`; override with `autoReject: false` in `defender.yaml` to restore wait-forever behavior. A live countdown indicator (`⏳ Will auto-deny in 45s...`) is shown in the TUI footer. Users can override in `defender.yaml`:
   ```yaml
   promptTimeout: 30    # shorter timeout for this project
   autoApprove: true    # auto-approve instead of deny on timeout

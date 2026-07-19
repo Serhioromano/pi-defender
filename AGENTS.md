@@ -83,13 +83,14 @@ pi.on("session_shutdown") → clears cached config, aborted flag, session-approv
 
 ### Patterns (src/patterns.yaml)
 
-- **bashToolPatterns**: regex patterns with `reason` and optional `ask: true`
+- **bashToolPatterns**: regex patterns with `reason`, optional `autoReject: true` (all bundled patterns), and optional `ask: true`
 - **zeroAccessPaths**: no read/write/delete (secrets, keys)
 - **readOnlyPaths**: read OK, write/edit blocked (system files, lockfiles)
 - **noDeletePaths**: read/write/edit OK, delete blocked (project docs)
-- **promptTimeout**: seconds before strict-mode prompt auto-dismisses (0/undefined = no timeout). Bundled default: 120
+- **promptTimeout**: seconds before prompts auto-dismiss (0/undefined = no timeout). Bundled default: 120. Now gates BOTH strict mode and pattern-blocked prompts.
 - **autoApprove**: false = auto-deny on timeout (default), true = auto-approve. Applies only to strict mode selector
 - **strictModeWhiteList**: regex patterns — commands matching these skip strict mode prompts
+- **autoReject** (per-pattern): when true and promptTimeout is 0/not set, block immediately without prompt. All bundled patterns ship with `autoReject: true`. Override per-pattern in defender.yaml with `autoReject: false` to restore wait-forever behavior.
 
 ### Pattern matching (config.ts:checkCommand)
 
@@ -99,7 +100,8 @@ pi.on("session_shutdown") → clears cached config, aborted flag, session-approv
 4. Checks if command modifies `readOnlyPaths` (write/edit/delete patterns)
 5. Checks if command deletes `noDeletePaths` (delete patterns only)
 
-Returns `{ blocked, reason }`. Path-based checks return `{ blocked, reason }`.
+Returns `{ blocked, reason, autoReject? }`. `autoReject` is propagated from the
+matching `BashPattern.autoReject` field. Path-based checks return `{ blocked, reason }`.
 
 ### Default mode (config.ts)
 
@@ -125,19 +127,23 @@ options and the `/defender:default-mode` command.
 ### Prompt timeout (config.ts)
 
 `promptTimeout` and `autoApprove` are optional top-level config keys that control
-strict mode prompt auto-dismissal. Bundled defaults: `promptTimeout: 120`,
+prompt auto-dismissal. Bundled defaults: `promptTimeout: 120`,
 `autoApprove: false` (auto-deny, secure-by-default).
 
 When merged across multiple files, uses **last-wins** semantics (reverse scan,
 first non-undefined value wins). This ensures user `defender.yaml` (never
 overwritten) always overrides shipped `patterns.yaml` defaults.
 
-These apply ONLY to the strict mode selector (`strictModePrompt`).
-`patternBlockedPrompt` is never timed — security-critical blocks (`rm -rf`,
-`sudo`, secrets access) must always require explicit user action.
+`promptTimeout` now gates BOTH `strictModePrompt` and `patternBlockedPrompt`.
+When set (> 0), both selectors show a live countdown and auto-deny on timeout.
+Timeout always denies (never aborts) — the agent can try a safer approach.
+Only explicit user selection of "Deny & Abort" triggers `ctx.abort()`.
+
+`autoApprove` applies only to the strict mode selector — pattern-blocked
+prompts always auto-deny on timeout regardless of `autoApprove`.
 
 Timeouts are ignored when:
-- Strict Mode is OFF (no prompts fire)
+- Strict Mode is OFF (strictModePrompt never fires)
 - `promptTimeout` is 0 or undefined
 - TUI is unavailable (falls back to `ctx.ui.confirm()` which has no timeout API)
 
@@ -226,20 +232,23 @@ Bash line continuation (`\<newline>`) is silently consumed (not added to sub-com
 ```
 for each subCmd in chain:
 
-1. patterns.yaml BLOCKED → patternBlockedPrompt(ctx, subCmd, reason, stepInfo)
-     selector: ⚠️ Allow / ❌ Deny & Abort
+1. patterns.yaml BLOCKED → patternBlockedPrompt(ctx, subCmd, reason, stepInfo, autoReject, promptTimeout)
+     selector: ⚠️ Allow anyway / ❌ Deny & Abort
+   - autoReject + no timeout → immediate deny (notification only, no prompt)
+   - Timeout > 0 → full prompt with countdown, auto-deny on timeout (no abort)
    - Allow → skip strict mode for THIS sub-command, continue to next
-   - Deny → calls ctx.abort() to cancel agent's turn + sets aborted=true
+   - Deny (timeout/esc/autoReject) → blocks command, aborted stays false
+   - Abort (explicit user selection) → calls ctx.abort() + sets aborted=true
 
 2. ABORTED STATE → blocks all bash with 🛡️❌ message
    - Also blocks Write/Edit tools (separate handler checks aborted flag)
 
 3. STRICT MODE (ON by default) → whitelist check → session-approved check → strictModePrompt()
      selector: ✅ Approve / 📋 Whitelist / ⭐ Approve All / ⚠️ Deny / ❌ Abort
-   - **Timeout**: prompt auto-dismisses after `promptTimeout` seconds (default 120). `autoApprove` controls the action (default: deny). A live countdown is shown in the TUI footer. Pattern-blocked prompts are NEVER timed.
+   - **Timeout**: prompt auto-dismisses after `promptTimeout` seconds (default 120). `autoApprove` controls the action (default: deny). A live countdown is shown in the TUI footer.
    - Whitelist check runs first: if subCmd matches strictModeWhiteList pattern → auto-approve
    - Session-approved check: if subCmd matches a previously "Approve All"-ed pattern → auto-approve
-   - Whitelist save: generates regex from subCmd, writes to .pi/patterns.yaml, reloads config
+   - Whitelist save: generates regex from subCmd, writes to .pi/defender.yaml, reloads config
    - "Approve All": adds subCmd regex pattern to in-memory sessionApprovedPatterns[]
      — future occurrences of the SAME command auto-approve (cleared on new prompt)
    - Abort → calls ctx.abort() + sets aborted=true
@@ -277,7 +286,7 @@ array — both can exceed typical terminal widths with long text.
 ### Selector UI
 
 Two custom UI prompts using `ctx.ui.custom()`:
-- **patternBlockedPrompt(ctx, command, reason, stepInfo?)**: 2 options, yellow/warning theme, shows pattern reason + command in accent
+- **patternBlockedPrompt(ctx, command, reason, stepInfo?, autoReject?, promptTimeout?)**: 2 options, yellow/warning theme, shows pattern reason + command in accent. Returns `"allow" | "deny" | "abort"`. Fast path: `autoReject` + no timeout → immediate `"deny"` without UI. When `promptTimeout > 0`, shows a live countdown and auto-denies on timeout (never aborts). Explicit "Deny & Abort" returns `"abort"`.
 - **strictModePrompt(ctx, command, stepInfo?, promptTimeout?, autoApprove?)**: 5 options, accent theme, shows step info for chain context. When `promptTimeout > 0`, shows a live countdown in the TUI footer (`⏳ Will auto-deny in 45s...`) and auto-dismisses when the timer fires. Timeout and interval are cleaned up on any user input or component dispose.
 
 Both fall back to `ctx.ui.confirm()` if custom UI unavailable.

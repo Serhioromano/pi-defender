@@ -484,8 +484,13 @@ export default function (pi: ExtensionAPI) {
     return [text];
   }
 
-  async function patternBlockedPrompt(ctx: any, command: string, reason: string, stepInfo?: string): Promise<"allow" | "deny"> {
+  async function patternBlockedPrompt(ctx: any, command: string, reason: string, stepInfo?: string, autoReject?: boolean, promptTimeout?: number): Promise<"allow" | "deny" | "abort"> {
     const displayReason = reason.length > 100 ? reason.slice(0, 97) + "..." : reason;
+
+    // Fast path: autoReject with no timeout — skip prompt entirely, block immediately
+    if (autoReject && (!promptTimeout || promptTimeout <= 0)) {
+      return "deny";
+    }
 
     if (typeof ctx.ui?.custom === "function") {
       try {
@@ -495,8 +500,27 @@ export default function (pi: ExtensionAPI) {
             let selectedIndex = 0;
             const options = [
               { value: "allow", label: "⚠️ Allow anyway (dangerous)" },
-              { value: "deny", label: "❌ Deny & Abort (stop entire prompt)" },
+              { value: "abort", label: "❌ Deny & Abort (stop entire prompt)" },
             ];
+
+            // === Timeout / countdown ===
+            let timeoutId: ReturnType<typeof setTimeout> | null = null;
+            let intervalId: ReturnType<typeof setInterval> | null = null;
+            let remainingSeconds = promptTimeout && promptTimeout > 0 ? promptTimeout : 0;
+
+            if (remainingSeconds > 0) {
+              intervalId = setInterval(() => {
+                remainingSeconds--;
+                if (remainingSeconds <= 0 && intervalId) { clearInterval(intervalId); intervalId = null; }
+                _tui.requestRender();
+              }, 1000);
+
+              timeoutId = setTimeout(() => {
+                if (intervalId) clearInterval(intervalId);
+                intervalId = null;
+                done("deny"); // auto-deny on timeout, NOT abort
+              }, promptTimeout! * 1000);
+            }
 
             function render(width: number): string[] {
               const lines: string[] = [];
@@ -525,7 +549,10 @@ export default function (pi: ExtensionAPI) {
                 }
               }
               lines.push("");
-              lines.push(theme.fg("dim", " ↑↓ navigate · 1-N select · enter confirm · esc deny"));
+              const timerText = remainingSeconds > 0
+                ? theme.fg("warning", ` ⏳ Will auto-deny in ${remainingSeconds}s...`)
+                : theme.fg("dim", " ↑↓ navigate · 1-2 select · enter confirm · esc deny");
+              lines.push(timerText);
               lines.push(theme.fg("warning", sep));
               return lines.map(l => truncateToWidth(l, width));
             }
@@ -533,7 +560,13 @@ export default function (pi: ExtensionAPI) {
             return {
               render,
               invalidate: () => { },
+              dispose: () => {
+                if (timeoutId) clearTimeout(timeoutId);
+                if (intervalId) clearInterval(intervalId);
+              },
               handleInput: (data: string) => {
+                if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                if (intervalId) { clearInterval(intervalId); intervalId = null; }
                 if (matchesKey(data, Key.up) || data === "k") {
                   selectedIndex = (selectedIndex - 1 + options.length) % options.length;
                   _tui.requestRender();
@@ -557,7 +590,7 @@ export default function (pi: ExtensionAPI) {
             };
           },
         );
-        return (result ?? "deny") as "allow" | "deny";
+        return (result ?? "deny") as "allow" | "deny" | "abort";
       } catch {
         // Fall through to confirm fallback
       }
@@ -571,7 +604,7 @@ export default function (pi: ExtensionAPI) {
         title,
         `${cmdPreview}\n\nReason: ${displayReason}\n\nAllow this dangerous command anyway?\n(No = deny & abort entire prompt)`,
       );
-      return allowed ? "allow" : "deny";
+      return allowed ? "allow" : "abort";
     }
 
     // No UI — deny by default
@@ -777,9 +810,9 @@ export default function (pi: ExtensionAPI) {
           return { block: true, reason: `Blocked by patterns.yaml: ${result.reason}` };
         }
 
-        const choice = await patternBlockedPrompt(ctx, subCmd, result.reason, stepInfo);
+        const choice = await patternBlockedPrompt(ctx, subCmd, result.reason, stepInfo, result.autoReject, config.promptTimeout);
 
-        if (choice === "deny") {
+        if (choice === "abort") {
           aborted = true;
           stats.strictBlocked++;
           ctx.ui.notify(
@@ -788,6 +821,15 @@ export default function (pi: ExtensionAPI) {
           );
           ctx.abort?.();
           return { block: true, reason: `Denied by user (patterns.yaml: ${result.reason}) — execution aborted` };
+        }
+
+        if (choice === "deny") {
+          stats.strictBlocked++;
+          ctx.ui.notify(
+            `🛡️ Denied by patterns.yaml: ${result.reason}`,
+            "warning",
+          );
+          return { block: true, reason: `Blocked by patterns.yaml: ${result.reason}` };
         }
 
         // User allowed this dangerous sub-command — skip strict mode for it, continue to next

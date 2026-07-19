@@ -86,9 +86,9 @@ Pi Defender merges rules from up to 4 YAML files:
 
 All 4 are merged — no file overrides another. On session start, a config table shows what each file contributed.
 
-### Prompt timeout (strict mode only)
+### Prompt timeout (pattern-blocked + strict mode)
 
-Strict mode prompts auto-dismiss after a configurable duration:
+Both pattern-blocked prompts and strict mode prompts auto-dismiss after a configurable duration:
 
 ```yaml
 # In .pi/defender.yaml or ~/.pi/defender.yaml:
@@ -96,7 +96,27 @@ promptTimeout: 30    # seconds before auto-dismiss (default: 120)
 autoApprove: true    # auto-approve on timeout (default: false = auto-deny)
 ```
 
-These apply only to the strict mode selector — pattern-blocked prompts (security-critical blocks like `rm -rf`, `sudo`, secrets access) never auto-dismiss. When strict mode is OFF, the timeout has no effect (no prompts fire).
+`autoApprove` only applies to non-whitelisted bash commands in strict mode — not to `patternBlockedPrompt` patterns. Pattern-blocked prompts always auto-deny on timeout regardless of `autoApprove`. Timeout never aborts the session; only explicit user selection of "Deny & Abort" does.
+
+### Auto-reject patterns (skip prompt entirely)
+
+All bundled patterns ship with `autoReject: true`. The `promptTimeout` config (default: 120) controls whether a countdown prompt appears or the command is blocked immediately:
+
+| `autoReject` | `promptTimeout` | Prompt | Options | Timeout action |
+|---|---|---|---|---|
+| `true` | > 0 | Full prompt + countdown | Allow anyway / Deny & Abort | Auto-deny (no abort) |
+| `true` | 0 / not set | None (notification only) | N/A | Immediate deny |
+| `false` | > 0 | Full prompt + countdown | Allow anyway / Deny & Abort | Auto-deny (no abort) |
+| `false` | 0 / not set | Full prompt (wait forever) | Allow anyway / Deny & Abort | N/A |
+
+Override per-pattern in `defender.yaml`:
+
+```yaml
+bashToolPatterns:
+  - pattern: '\bgit\s+push\s+.*--force'
+    autoReject: false   # show prompt and wait forever for this pattern
+    reason: git push --force
+```
 
 ### Adding patterns
 
