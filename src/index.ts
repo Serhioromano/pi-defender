@@ -565,8 +565,6 @@ export default function (pi: ExtensionAPI) {
                 if (intervalId) clearInterval(intervalId);
               },
               handleInput: (data: string) => {
-                if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-                if (intervalId) { clearInterval(intervalId); intervalId = null; }
                 if (matchesKey(data, Key.up) || data === "k") {
                   selectedIndex = (selectedIndex - 1 + options.length) % options.length;
                   _tui.requestRender();
@@ -574,14 +572,20 @@ export default function (pi: ExtensionAPI) {
                   selectedIndex = (selectedIndex + 1) % options.length;
                   _tui.requestRender();
                 } else if (matchesKey(data, Key.enter)) {
+                  if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                  if (intervalId) { clearInterval(intervalId); intervalId = null; }
                   done(options[selectedIndex].value);
                 } else if (matchesKey(data, Key.escape)) {
+                  if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                  if (intervalId) { clearInterval(intervalId); intervalId = null; }
                   done("deny");
                 } else {
                   const printable = decodeKittyPrintable(data) || data;
                   if (printable >= "1" && printable <= "9") {
                     const idx = parseInt(printable, 10) - 1;
                     if (idx >= 0 && idx < options.length) {
+                      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                      if (intervalId) { clearInterval(intervalId); intervalId = null; }
                       done(options[idx].value);
                     }
                   }
@@ -703,8 +707,6 @@ export default function (pi: ExtensionAPI) {
                 if (intervalId) clearInterval(intervalId);
               },
               handleInput: (data: string) => {
-                if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
-                if (intervalId) { clearInterval(intervalId); intervalId = null; }
                 if (matchesKey(data, Key.up) || data === "k") {
                   selectedIndex = (selectedIndex - 1 + options.length) % options.length;
                   _tui.requestRender();
@@ -712,14 +714,20 @@ export default function (pi: ExtensionAPI) {
                   selectedIndex = (selectedIndex + 1) % options.length;
                   _tui.requestRender();
                 } else if (matchesKey(data, Key.enter)) {
+                  if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                  if (intervalId) { clearInterval(intervalId); intervalId = null; }
                   done(options[selectedIndex].value);
                 } else if (matchesKey(data, Key.escape)) {
+                  if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                  if (intervalId) { clearInterval(intervalId); intervalId = null; }
                   done("deny");
                 } else {
                   const printable = decodeKittyPrintable(data) || data;
                   if (printable >= "1" && printable <= "9") {
                     const idx = parseInt(printable, 10) - 1;
                     if (idx >= 0 && idx < options.length) {
+                      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                      if (intervalId) { clearInterval(intervalId); intervalId = null; }
                       done(options[idx].value);
                     }
                   }
