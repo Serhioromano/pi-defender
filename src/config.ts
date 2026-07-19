@@ -19,6 +19,10 @@ export interface Config {
   noDeletePaths: string[];
   strictModeWhiteList: string[];
   defaultMode?: "strict" | "patterns" | "off" | "interactive";
+  /** Seconds before strict-mode prompt auto-dismisses. 0 or undefined = no timeout. */
+  promptTimeout?: number;
+  /** false = auto-deny on timeout (default), true = auto-approve. */
+  autoApprove?: boolean;
 }
 
 /** Per-file source tracking — what each patterns.yaml contributed. */
@@ -144,6 +148,8 @@ function parseConfigFile(path: string): Config | null {
       noDeletePaths: (raw.noDeletePaths as string[]) || [],
       strictModeWhiteList: (raw.strictModeWhiteList as string[]) || [],
       defaultMode: (raw.defaultMode as Config["defaultMode"]) || undefined,
+      promptTimeout: (raw.promptTimeout as number) || undefined,
+      autoApprove: (raw.autoApprove as boolean) ?? undefined,
     };
   } catch {
     return null;
@@ -161,6 +167,11 @@ function mergeConfigs(...configs: Config[]): Config {
     // always overrides global ~/.pi/defender.yaml. getConfigPaths loads local before
     // global, so the first non-undefined value is the most specific (local) one.
     defaultMode: (() => { const raw = configs.map(c => c.defaultMode).filter(Boolean); return raw.length > 0 ? raw[0] : undefined; })(),
+
+    // promptTimeout and autoApprove: LAST-wins (reverse scan, first non-undefined wins)
+    // so defender.yaml (user, never overwritten) overrides patterns.yaml (shipped, overwritten on install).
+    promptTimeout: (() => { const configsReversed = [...configs].reverse(); return configsReversed.find(c => c.promptTimeout !== undefined)?.promptTimeout; })(),
+    autoApprove: (() => { const configsReversed = [...configs].reverse(); return configsReversed.find(c => c.autoApprove !== undefined)?.autoApprove; })(),
   };
 }
 

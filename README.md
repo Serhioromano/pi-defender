@@ -86,6 +86,18 @@ Pi Defender merges rules from up to 4 YAML files:
 
 All 4 are merged — no file overrides another. On session start, a config table shows what each file contributed.
 
+### Prompt timeout (strict mode only)
+
+Strict mode prompts auto-dismiss after a configurable duration:
+
+```yaml
+# In .pi/defender.yaml or ~/.pi/defender.yaml:
+promptTimeout: 30    # seconds before auto-dismiss (default: 120)
+autoApprove: true    # auto-approve on timeout (default: false = auto-deny)
+```
+
+These apply only to the strict mode selector — pattern-blocked prompts (security-critical blocks like `rm -rf`, `sudo`, secrets access) never auto-dismiss. When strict mode is OFF, the timeout has no effect (no prompts fire).
+
 ### Adding patterns
 
 Your custom rules go in `.pi/defender.yaml` (never overwritten on updates):

@@ -2,6 +2,15 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [Unreleased]
+
+- `add` - **Timeout for strict mode prompts (#25)**: Strict mode prompts now auto-dismiss after a configurable timeout. Two new config options: `promptTimeout` (seconds, default 120) and `autoApprove` (boolean, default false = auto-deny on timeout). These apply only to the strict mode selector — pattern-blocked prompts (`rm -rf`, `sudo`, secrets access) are never auto-dismissed and always require explicit user action. A live countdown indicator (`⏳ Will auto-deny in 45s...`) is shown in the TUI footer. Users can override in `defender.yaml`:
+  ```yaml
+  promptTimeout: 30    # shorter timeout for this project
+  autoApprove: true    # auto-approve instead of deny on timeout
+  ```
+  Config priority uses last-wins semantics — user `defender.yaml` always overrides shipped `patterns.yaml` defaults. When strict mode is OFF (patterns-only or disabled), the timeout is irrelevant (no prompts fire). The fallback `ctx.ui.confirm()` path (no TUI) ignores the timeout since that API has no timeout support.
+
 ## [v1.8.2]
 
 - `fix` - **Changelog message now self-identifies as authoritative (#17)**: Added a footer to the upgrade changelog message (`pi.sendUserMessage`) stating it's bundled with the extension and needs no independent verification. Prevents agents with RAG rules from trying to verify the changelog against commit/PR links that don't exist in the message.

@@ -12,6 +12,16 @@
 #
 # All four files are merged together at load time.
 #
+
+# -----------------------------------------------------------------------------
+# PROMPT TIMEOUT — Auto-dismiss strict mode prompts
+# -----------------------------------------------------------------------------
+# Seconds before strict mode prompts auto-dismiss. 0 = no timeout.
+promptTimeout: 120
+
+# What to do when the timeout fires: false = auto-deny (secure-by-default), true = auto-approve.
+autoApprove: false
+
 # -----------------------------------------------------------------------------
 # BASH TOOL PATTERNS — Matched against Bash tool commands
 # -----------------------------------------------------------------------------

@@ -582,7 +582,7 @@ export default function (pi: ExtensionAPI) {
   // STRICT MODE SELECTOR
   // ===========================================================================
 
-  async function strictModePrompt(ctx: any, command: string, stepInfo?: string): Promise<"approve" | "deny" | "approve_all" | "abort" | "whitelist"> {
+  async function strictModePrompt(ctx: any, command: string, stepInfo?: string, promptTimeout?: number, autoApprove?: boolean): Promise<"approve" | "deny" | "approve_all" | "abort" | "whitelist"> {
     // Try custom UI selector first
     if (typeof ctx.ui?.custom === "function") {
       try {
@@ -590,6 +590,34 @@ export default function (pi: ExtensionAPI) {
           (_tui: any, theme: any, _kb: any, done: (value: string) => void) => {
             savedTheme = theme;
             let selectedIndex = 0;
+
+            // === Timeout / countdown setup ===
+            // promptTimeout applies only to the strict mode selector.
+            // patternBlockedPrompt is not affected — security-critical blocks
+            // must always require explicit user action.
+            let timeoutId: ReturnType<typeof setTimeout> | null = null;
+            let intervalId: ReturnType<typeof setInterval> | null = null;
+            let remainingSeconds = promptTimeout && promptTimeout > 0 ? promptTimeout : 0;
+
+            if (remainingSeconds > 0) {
+              const timeoutAction = autoApprove ? "approve" : "deny";
+
+              intervalId = setInterval(() => {
+                remainingSeconds--;
+                if (remainingSeconds <= 0) {
+                  if (intervalId) clearInterval(intervalId);
+                  intervalId = null;
+                }
+                _tui.requestRender();
+              }, 1000);
+
+              timeoutId = setTimeout(() => {
+                if (intervalId) clearInterval(intervalId);
+                intervalId = null;
+                done(timeoutAction);
+              }, promptTimeout! * 1000);
+            }
+
             const options = [
               { value: "approve", label: "✅ Approve this command" },
               { value: "whitelist", label: "📋 Approve & Whitelist (remember for future)" },
@@ -625,7 +653,11 @@ export default function (pi: ExtensionAPI) {
                 }
               }
               lines.push("");
-              lines.push(theme.fg("dim", " ↑↓ navigate · 1-N select · enter confirm · esc deny"));
+              const actionLabel = autoApprove ? "auto-approve" : "auto-deny";
+              const timerText = remainingSeconds > 0
+                ? theme.fg("warning", ` ⏳ Will ${actionLabel} in ${remainingSeconds}s...`)
+                : theme.fg("dim", " ↑↓ navigate · 1-N select · enter confirm · esc deny");
+              lines.push(timerText);
               lines.push(theme.fg("accent", sep));
               return lines.map(l => truncateToWidth(l, width));
             }
@@ -633,7 +665,13 @@ export default function (pi: ExtensionAPI) {
             return {
               render,
               invalidate: () => { },
+              dispose: () => {
+                if (timeoutId) clearTimeout(timeoutId);
+                if (intervalId) clearInterval(intervalId);
+              },
               handleInput: (data: string) => {
+                if (timeoutId) { clearTimeout(timeoutId); timeoutId = null; }
+                if (intervalId) { clearInterval(intervalId); intervalId = null; }
                 if (matchesKey(data, Key.up) || data === "k") {
                   selectedIndex = (selectedIndex - 1 + options.length) % options.length;
                   _tui.requestRender();
@@ -797,7 +835,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         // Show selector for this individual sub-command
-        const choice = await strictModePrompt(ctx, subCmd, stepInfo);
+        const choice = await strictModePrompt(ctx, subCmd, stepInfo, config.promptTimeout, config.autoApprove);
 
         if (choice === "deny") {
           stats.strictBlocked++;

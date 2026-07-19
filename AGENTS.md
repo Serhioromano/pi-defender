@@ -87,6 +87,8 @@ pi.on("session_shutdown") → clears cached config, aborted flag, session-approv
 - **zeroAccessPaths**: no read/write/delete (secrets, keys)
 - **readOnlyPaths**: read OK, write/edit blocked (system files, lockfiles)
 - **noDeletePaths**: read/write/edit OK, delete blocked (project docs)
+- **promptTimeout**: seconds before strict-mode prompt auto-dismisses (0/undefined = no timeout). Bundled default: 120
+- **autoApprove**: false = auto-deny on timeout (default), true = auto-approve. Applies only to strict mode selector
 - **strictModeWhiteList**: regex patterns — commands matching these skip strict mode prompts
 
 ### Pattern matching (config.ts:checkCommand)
@@ -119,6 +121,25 @@ Writes `defaultMode` as the **first key** in the file, followed by a blank line
 before any remaining content (whitelist patterns, etc.). Returns
 `{ success, path, reason? }`. Used by the session-start selector save
 options and the `/defender:default-mode` command.
+
+### Prompt timeout (config.ts)
+
+`promptTimeout` and `autoApprove` are optional top-level config keys that control
+strict mode prompt auto-dismissal. Bundled defaults: `promptTimeout: 120`,
+`autoApprove: false` (auto-deny, secure-by-default).
+
+When merged across multiple files, uses **last-wins** semantics (reverse scan,
+first non-undefined value wins). This ensures user `defender.yaml` (never
+overwritten) always overrides shipped `patterns.yaml` defaults.
+
+These apply ONLY to the strict mode selector (`strictModePrompt`).
+`patternBlockedPrompt` is never timed — security-critical blocks (`rm -rf`,
+`sudo`, secrets access) must always require explicit user action.
+
+Timeouts are ignored when:
+- Strict Mode is OFF (no prompts fire)
+- `promptTimeout` is 0 or undefined
+- TUI is unavailable (falls back to `ctx.ui.confirm()` which has no timeout API)
 
 ### Version tracking (config.ts)
 
@@ -215,6 +236,7 @@ for each subCmd in chain:
 
 3. STRICT MODE (ON by default) → whitelist check → session-approved check → strictModePrompt()
      selector: ✅ Approve / 📋 Whitelist / ⭐ Approve All / ⚠️ Deny / ❌ Abort
+   - **Timeout**: prompt auto-dismisses after `promptTimeout` seconds (default 120). `autoApprove` controls the action (default: deny). A live countdown is shown in the TUI footer. Pattern-blocked prompts are NEVER timed.
    - Whitelist check runs first: if subCmd matches strictModeWhiteList pattern → auto-approve
    - Session-approved check: if subCmd matches a previously "Approve All"-ed pattern → auto-approve
    - Whitelist save: generates regex from subCmd, writes to .pi/patterns.yaml, reloads config
@@ -256,7 +278,7 @@ array — both can exceed typical terminal widths with long text.
 
 Two custom UI prompts using `ctx.ui.custom()`:
 - **patternBlockedPrompt(ctx, command, reason, stepInfo?)**: 2 options, yellow/warning theme, shows pattern reason + command in accent
-- **strictModePrompt(ctx, command, stepInfo?)**: 5 options, accent theme, shows step info for chain context
+- **strictModePrompt(ctx, command, stepInfo?, promptTimeout?, autoApprove?)**: 5 options, accent theme, shows step info for chain context. When `promptTimeout > 0`, shows a live countdown in the TUI footer (`⏳ Will auto-deny in 45s...`) and auto-dismisses when the timer fires. Timeout and interval are cleaned up on any user input or component dispose.
 
 Both fall back to `ctx.ui.confirm()` if custom UI unavailable.
 
@@ -267,7 +289,7 @@ Each option is prefixed with `[N]` — press the corresponding number to select:
 - `1` = first option, `2` = second, etc.
 - Works in both pattern-blocked (2 options) and strict mode (5 options) selectors
 - Much faster than arrow keys for common actions: press `2` to whitelist, `3` for approve-all
-- Footer shows: `↑↓ navigate · 1-N select · enter confirm · esc deny`
+- Footer shows: `↑↓ navigate · 1-N select · enter confirm · esc deny` (or `⏳ Will auto-deny in Ns...` when timeout is active)
 
 ### Keyboard input handling
 
