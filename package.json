@@ -6,7 +6,8 @@
   "author": "Serhioromano",
   "repository": "github:Serhioromano/pi-defender",
   "scripts": {
-    "postinstall": "mkdir -p ~/.pi && cp src/patterns.yaml ~/.pi/"
+    "postinstall": "mkdir -p ~/.pi && cp src/patterns.yaml ~/.pi/",
+    "test": "node --experimental-strip-types --test test/*.test.mts"
   },
   "keywords": [
     "pi",
