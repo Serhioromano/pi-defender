@@ -2,6 +2,10 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [Unreleased]
+
+- `fix` - **Path/filename globs no longer match substrings inside identifiers**: Zero-access, read-only, and no-delete **globs** (e.g. `*.key`, `*.pem`, `*.min.js`, `*.lock`) were compiled to a regex and tested **unanchored** against the whole command string, so any command containing a matching substring inside a longer word was wrongly blocked — e.g. `node -e "console.log(Object.keys(m))"` tripped the `*.key` rule. Path globs are now bracketed with shell-token boundaries (a left delimiter of start-of-string / shell metacharacter / `/`, and a right `\w` boundary) via a shared `rightGlobBoundary()` helper, so `cat secret.key` is still blocked while `Object.keys` is not. Directory-style globs ending in `/` keep prefix-matching, and literal (non-glob) zero-access paths such as `~/.ssh/` and `id_rsa` are unchanged. Adds a runnable `test/` suite (`npm test`) covering the regression and the preserved protections.
+
 ## [v1.9.0]
 
 - `add` - **Auto-reject for bashToolPatterns + timeout gating for pattern-blocked prompts (#24)**: Every bundled `bashToolPatterns` entry now ships with `autoReject: true`. Combined with the default `promptTimeout: 120`, dangerous commands show a 2-minute countdown prompt with full control (⚠️ Allow anyway / ❌ Deny & Abort), then auto-deny if no response. When `promptTimeout` is 0/not set and `autoReject: true`, the command is blocked immediately with a notification — no prompt. The `promptTimeout` config (previously strict-mode only) now also gates `patternBlockedPrompt`. Timeout always auto-denies (agent can try a safer approach); only explicit user selection of "Deny & Abort" aborts the session. Users can override specific patterns with `autoReject: false` in `defender.yaml` to get the old wait-forever behavior.

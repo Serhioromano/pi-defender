@@ -247,6 +247,28 @@ export function globToRegex(globPattern: string): string {
   return result;
 }
 
+// -----------------------------------------------------------------------------
+// SHELL-TOKEN BOUNDARIES (path/filename globs matched against command strings)
+// -----------------------------------------------------------------------------
+// A filename glob such as `*.key` must match a real path token on the command
+// line (e.g. `cat secret.key`) but NOT a substring buried inside a longer
+// identifier (e.g. `Object.keys`, which naively matched `[^\s/]*\.key`).
+//
+// We bracket the compiled glob with:
+//   - a LEFT delimiter: start-of-string or a shell metacharacter / path
+//     separator, so the token cannot begin mid-identifier; and
+//   - a RIGHT word-boundary, so the match cannot end in the middle of a longer
+//     word (this is what stops `*.key` from firing on `Object.keys`).
+//
+// The right boundary is omitted for directory-style globs (those ending in
+// `/`), which are meant to prefix-match a longer path.
+export const TOKEN_LEFT_BOUNDARY = "(?:^|[\\s'\"()=:;,<>|&/`])";
+export const TOKEN_RIGHT_BOUNDARY = "(?![\\w])";
+
+export function rightGlobBoundary(glob: string): string {
+  return glob.endsWith("/") ? "" : TOKEN_RIGHT_BOUNDARY;
+}
+
 export function matchPath(filePath: string, pattern: string): boolean {
   const expandedPattern = pattern.replace(/^~/, homedir());
   const normalized = filePath.replace(/\\/g, "/");
@@ -306,7 +328,9 @@ export function checkPathPatterns(
       try {
         const cmdPrefix = patternTemplate.replace("{path}", "");
         if (cmdPrefix) {
-          const regex = new RegExp(cmdPrefix + globRegex, "i");
+          // Bound the glob on the right so a path glob like `*.min.js` cannot
+          // match a longer token such as `app.min.json` (see rightGlobBoundary).
+          const regex = new RegExp(cmdPrefix + globRegex + rightGlobBoundary(path), "i");
           if (regex.test(command)) {
             return {
               blocked: true,
@@ -370,7 +394,10 @@ export function checkCommand(command: string, config: Config): CheckResult {
     if (isGlobPattern(zeroPath)) {
       const globRegex = globToRegex(zeroPath);
       try {
-        const regex = new RegExp(globRegex, "i");
+        // Anchor the filename glob to shell-token boundaries so it matches real
+        // path tokens (e.g. `cat secret.key`) without firing on substrings inside
+        // identifiers (e.g. `Object.keys`, which previously matched `*.key`).
+        const regex = new RegExp(TOKEN_LEFT_BOUNDARY + globRegex + rightGlobBoundary(zeroPath), "i");
         if (regex.test(matchTarget)) {
           return {
             blocked: true,
