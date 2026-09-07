@@ -2,7 +2,7 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
-## [v1.9.2]
+## [Unreleased]
 
 - `fix` - **`pi-tui` is now a peer dependency instead of a hard dependency (#29)**: Removed `@earendil-works/pi-tui` from `dependencies` (which was pinned to `^0.74.0` and forced npm to keep pi-tui on 0.74.x even when the Pi agent itself ships a newer version). It is now declared as a peer dependency with `"*"`, matching the convention used by other Pi packages, so the host Pi agent's own `pi-tui` version is used at runtime. It remains in `devDependencies` so local development and the test suite can still resolve the import.
 

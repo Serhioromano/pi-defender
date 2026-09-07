@@ -4,3 +4,6 @@
 - Look pi documentaion for best practice
 - When work with issues and PR use gh CLI
 - After solving issue close it and add comment description what was done
+- Never commit changes
+- Never publish package
+- Never change or update versions 
