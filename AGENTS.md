@@ -374,6 +374,12 @@ A **150ms delay** runs between sub-command selectors to prevent TUI race conditi
 - `ctx.ui.custom(callback)` → `T` — custom TUI components (SelectList-style)
 - `pi.registerTool(definition)` — custom tools callable by the LLM (e.g., `pi_defender_create_issue` for GitHub REST API)
 
+## Dependencies
+
+- `yaml` — only runtime `dependency` (parsing/serializing config files).
+- `@earendil-works/pi-tui` — **peer dependency** (`"*"`), NOT a hard `dependency`. The host Pi agent provides its own `pi-tui`; pinning it in `dependencies` forces npm to lock it to an old version (#29). It is also in `devDependencies` so local dev/tests can resolve the import.
+- `@earendil-works/pi-coding-agent` — `devDependencies` only (types + `isToolCallEventType` runtime import); the host always provides it.
+
 ## Important restrictions
 
 - **`pi_defender_create_issue`** is EXCLUSIVELY for `/defender:report-issue`. It creates issues ONLY on `Serhioromano/pi-defender`. NEVER use it to create issues on other repositories — use `gh issue create` or the GitHub MCP tools instead. NEVER call this tool unless the user explicitly invoked `/defender:report-issue` or the follow-up message from that command explicitly instructs the agent to call it.

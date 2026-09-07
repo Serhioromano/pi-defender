@@ -2,6 +2,10 @@
 
 All notable changes to Pi Defender will be documented in this file.
 
+## [v1.9.2]
+
+- `fix` - **`pi-tui` is now a peer dependency instead of a hard dependency (#29)**: Removed `@earendil-works/pi-tui` from `dependencies` (which was pinned to `^0.74.0` and forced npm to keep pi-tui on 0.74.x even when the Pi agent itself ships a newer version). It is now declared as a peer dependency with `"*"`, matching the convention used by other Pi packages, so the host Pi agent's own `pi-tui` version is used at runtime. It remains in `devDependencies` so local development and the test suite can still resolve the import.
+
 ## [v1.9.1]
 
 - `fix` - **Path/filename globs no longer match substrings inside identifiers**: Zero-access, read-only, and no-delete **globs** (e.g. `*.key`, `*.pem`, `*.min.js`, `*.lock`) were compiled to a regex and tested **unanchored** against the whole command string, so any command containing a matching substring inside a longer word was wrongly blocked — e.g. `node -e "console.log(Object.keys(m))"` tripped the `*.key` rule. Path globs are now bracketed with shell-token boundaries (a left delimiter of start-of-string / shell metacharacter / `/`, and a right `\w` boundary) via a shared `rightGlobBoundary()` helper, so `cat secret.key` is still blocked while `Object.keys` is not. Directory-style globs ending in `/` keep prefix-matching, and literal (non-glob) zero-access paths such as `~/.ssh/` and `id_rsa` are unchanged. Adds a runnable `test/` suite (`npm test`) covering the regression and the preserved protections.
