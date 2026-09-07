@@ -1,3 +1,5 @@
+defaultMode: off
+
 strictModeWhiteList:
   - ^npm test\b
   - ^index\.ts\b
@@ -5,4 +7,40 @@ strictModeWhiteList:
   - ^grep\b
   - ^sed\b
   - ^node\b
-defaultMode: off
+  - ^echo\b
+  - ^which\b
+  - ^cat\b
+  - ^tail\b
+  - ^export\b
+  - ^find\b
+  - ^npm search\b
+  - ^cd\b
+  - ^pi\b
+  - ^timeout\b
+  - ^true\b
+  - ^git checkout\b
+  - ^npm test\b
+  - ^index\.ts\b
+  - ^gh\b
+  - ^grep\b
+  - ^sed\b
+  - ^node\b
+  - ^ls\b
+  - ^mkdir\b
+  - ^npx biome\b
+  - ^wc\b
+  - ^rg\b
+  - ^head\b
+  - ^npm ls\b
+  - ^npm view\b
+  - ^npm install\b
+  - ^git remote\b
+  - ^git branch\b
+  - ^git log\b
+  - ^biome\b
+  - ^npm pack\b
+  - ^npx ctx7@latest\b
+  - ^npx ctx7\b
+  - ^cp\b
+  - ^npx tsc\b
+
